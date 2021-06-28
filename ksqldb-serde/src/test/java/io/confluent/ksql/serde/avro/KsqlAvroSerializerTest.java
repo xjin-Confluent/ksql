@@ -239,7 +239,9 @@ public class KsqlAvroSerializerTest {
     assertThat(avroSchemaStoredInSchemaRegistry(), is(ORDER_AVRO_SCHEMA));
   }
 
+  // CHECKSTYLE:OFF
   // TODO this test is brittle. Different JVMs print this message differently
+  // CHECKSTYLE:ON
   @Test
   public void shouldThrowIfNotStruct() {
     // Given:
@@ -466,7 +468,9 @@ public class KsqlAvroSerializerTest {
     assertThat(avroSchemaStoredInSchemaRegistry(), is(BOOLEAN_ARRAY_AVRO_SCHEMA));
   }
 
+  // CHECKSTYLE:OFF
   // TODO this test is brittle. Different JVMs print this message differently
+  // CHECKSTYLE:ON
   @Test
   public void shouldThrowIfNotArray() {
     // Given:
@@ -655,7 +659,9 @@ public class KsqlAvroSerializerTest {
     assertThat(avroSchemaStoredInSchemaRegistry(), is(OPTIONAL_KEY_MAP_AVRO_SCHEMA));
   }
 
+  // CHECKSTYLE:OFF
   // TODO this test is brittle. Different JVMs print this message differently
+  // CHECKSTYLE:ON
   @Test
   public void shouldThrowIfNotMap() {
     // Given:
