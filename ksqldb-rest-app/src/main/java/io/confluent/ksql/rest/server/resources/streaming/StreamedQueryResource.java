@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.GenericRow;
+import io.confluent.ksql.analyzer.Analysis;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
 import io.confluent.ksql.analyzer.PullQueryValidator;
 import io.confluent.ksql.analyzer.QueryAnalyzer;
@@ -348,11 +349,17 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     if (statement.getStatement().isPullQuery()) {
       final QueryAnalyzer queryAnalyzer = new QueryAnalyzer(ksqlEngine.getMetaStore(), "");
-      final ImmutableAnalysis analysis = new RewrittenAnalysis(
-          queryAnalyzer.analyze(statement.getStatement(), Optional.empty()),
+      final Analysis analysis;
+      try {
+        analysis = queryAnalyzer.analyze(statement.getStatement(), Optional.empty());
+      } catch (final KsqlException e) {
+        throw new KsqlStatementException(e.getMessage(), statement.getStatementText(), e);
+      }
+      final ImmutableAnalysis immutableAnalysis = new RewrittenAnalysis(
+          analysis,
           new QueryExecutionUtil.ColumnReferenceRewriter()::process
       );
-      final DataSource dataSource = analysis.getFrom().getDataSource();
+      final DataSource dataSource = immutableAnalysis.getFrom().getDataSource();
       final DataSource.DataSourceType dataSourceType = dataSource.getDataSourceType();
       switch (dataSourceType) {
         case KTABLE:
@@ -680,6 +687,12 @@ public class StreamedQueryResource implements KsqlConfigurable {
       final Map<TopicPartition, OffsetAndMetadata> metadataMap =
           result.partitionsToOffsetAndMetadata().get();
       for (final Map.Entry<TopicPartition, Long> entry : endOffsets.entrySet()) {
+        if (entry.getValue() == 0) {
+          // special case where we expect no work at all on the partition, so we don't even
+          // need to check the committed offset (if we did, we'd potentially wait forever, since
+          // Streams won't commit anything for an empty topic).
+          continue;
+        }
         final OffsetAndMetadata offsetAndMetadata = metadataMap.get(entry.getKey());
         if (offsetAndMetadata == null || offsetAndMetadata.offset() < entry.getValue()) {
           return false;

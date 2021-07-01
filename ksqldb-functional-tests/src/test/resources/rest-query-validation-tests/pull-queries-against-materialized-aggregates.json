@@ -1212,17 +1212,39 @@
       }
     },
     {
-      "name": "on stream",
+      "name": "on empty stream",
       "statements": [
         "CREATE STREAM S1 (ID INT KEY, IGNORED INT) WITH (kafka_topic='test_topic', value_format='JSON');",
         "CREATE STREAM S2 AS SELECT * FROM S1;",
         "SELECT * FROM S2 WHERE ID = 10;"
       ],
-      "expectedError": {
-        "type": "io.confluent.ksql.rest.entity.KsqlStatementErrorMessage",
-        "message": "Pull queries are not supported on streams.",
-        "status": 400
-      }
+      "responses": [
+        {"admin": {"@type": "currentStatus"}},
+        {"admin": {"@type": "currentStatus"}},
+        {"query": [
+          {"header":{"schema":"`ID` STRING KEY, `VALUE` BIGINT"}},
+          {"row":{"columns":["10", 1]}}
+        ]}
+      ]
+    },
+    {
+      "name": "on stream",
+      "statements": [
+        "CREATE STREAM S1 (MYKEY INT KEY, MYVALUE INT) WITH (kafka_topic='test_topic', value_format='JSON');",
+        "CREATE STREAM S2 AS SELECT * FROM S1;",
+        "SELECT * FROM S2;"
+      ],
+      "inputs": [
+        {"topic": "test_topic", "timestamp": 12365, "key": 10, "value": {"myvalue": 1}}
+      ],
+      "responses": [
+        {"admin": {"@type": "currentStatus"}},
+        {"admin": {"@type": "currentStatus"}},
+        {"query": [
+          {"header":{"schema":"`MYKEY` INTEGER, `MYVALUE` INTEGER"}},
+          {"row":{"columns":[10, 1]}}
+        ]}
+      ]
     },
     {
       "name": "window start lower bound",
