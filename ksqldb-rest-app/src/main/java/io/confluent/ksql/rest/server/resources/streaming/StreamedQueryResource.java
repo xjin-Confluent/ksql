@@ -15,11 +15,13 @@
 
 package io.confluent.ksql.rest.server.resources.streaming;
 
+import static java.util.function.Function.identity;
+import static java.util.stream.Collectors.toMap;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.RateLimiter;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.confluent.ksql.GenericRow;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
 import io.confluent.ksql.analyzer.PullQueryValidator;
@@ -73,6 +75,7 @@ import io.confluent.ksql.util.KsqlStatementException;
 import io.confluent.ksql.util.ScalablePushQueryMetadata;
 import io.confluent.ksql.util.TransientQueryMetadata;
 import io.confluent.ksql.version.metrics.ActivenessRegistrar;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Context;
 import java.time.Clock;
 import java.time.Duration;
@@ -85,14 +88,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-
-import io.netty.handler.codec.http.HttpResponseStatus;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsResult;
 import org.apache.kafka.clients.admin.ListOffsetsOptions;
@@ -109,9 +108,6 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static java.util.function.Function.identity;
-import static java.util.stream.Collectors.toMap;
 
 @SuppressWarnings({"ClassDataAbstractionCoupling"})
 public class StreamedQueryResource implements KsqlConfigurable {
@@ -277,7 +273,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     try {
       return statementParser.parseSingleStatement(ksql);
-    } catch (IllegalArgumentException | KsqlException e) {
+    } catch (final IllegalArgumentException | KsqlException e) {
       throw new KsqlRestException(Errors.badStatement(e, ksql));
     }
   }
@@ -340,68 +336,69 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
   @NotNull
   private EndpointResponse handleQuery(final KsqlSecurityContext securityContext,
-                                       final KsqlRequest request,
-                                       final PreparedStatement<Query> statement,
-                                       final CompletableFuture<Void> connectionClosedFuture,
-                                       final KsqlMediaType mediaType,
-                                       final Optional<Boolean> isInternalRequest,
-                                       final MetricsCallbackHolder metricsCallbackHolder,
-                                       final Map<String, Object> configProperties,
-                                       final Context context,
-                                       final SlidingWindowRateLimiter pullBandRateLimiter) {
+      final KsqlRequest request,
+      final PreparedStatement<Query> statement,
+      final CompletableFuture<Void> connectionClosedFuture,
+      final KsqlMediaType mediaType,
+      final Optional<Boolean> isInternalRequest,
+      final MetricsCallbackHolder metricsCallbackHolder,
+      final Map<String, Object> configProperties,
+      final Context context,
+      final SlidingWindowRateLimiter pullBandRateLimiter) {
 
     if (statement.getStatement().isPullQuery()) {
       final QueryAnalyzer queryAnalyzer = new QueryAnalyzer(ksqlEngine.getMetaStore(), "");
       final ImmutableAnalysis analysis = new RewrittenAnalysis(
-              queryAnalyzer.analyze(statement.getStatement(), Optional.empty()),
-              new QueryExecutionUtil.ColumnReferenceRewriter()::process
+          queryAnalyzer.analyze(statement.getStatement(), Optional.empty()),
+          new QueryExecutionUtil.ColumnReferenceRewriter()::process
       );
       final DataSource dataSource = analysis.getFrom().getDataSource();
       final DataSource.DataSourceType dataSourceType = dataSource.getDataSourceType();
       switch (dataSourceType) {
         case KTABLE:
           return handleTablePullQuery(
-                  securityContext.getServiceContext(),
-                  statement,
-                  configProperties,
-                  request.getRequestProperties(),
-                  isInternalRequest,
-                  connectionClosedFuture,
-                  metricsCallbackHolder,
-                  pullBandRateLimiter
-          );
-        case KSTREAM:
-          return handleStreamPullQuery(
-                  securityContext.getServiceContext(),
-                  dataSource,
-                  statement,
-                  configProperties,
-                  connectionClosedFuture
-          );
-        default:
-          throw new KsqlException("Unexpected data source type for pull query: " + dataSourceType);
-      }
-    } else if(ScalablePushUtil.isScalablePushQuery(statement.getStatement(), ksqlEngine, ksqlConfig,
-            configProperties)) {
-      // log validated statements for query anonymization
-      QueryLogger.info("Transient query created", statement.getStatementText());
-      return handleScalablePushQuery(
               securityContext.getServiceContext(),
               statement,
               configProperties,
               request.getRequestProperties(),
+              isInternalRequest,
               connectionClosedFuture,
-              context
+              metricsCallbackHolder,
+                  pullBandRateLimiter
+          );
+        case KSTREAM:
+          return handleStreamPullQuery(
+              securityContext.getServiceContext(),
+              dataSource,
+              statement,
+              configProperties,
+              connectionClosedFuture
+          );
+        default:
+          throw new KsqlException("Unexpected data source type for pull query: " + dataSourceType);
+      }
+    } else if (ScalablePushUtil
+        .isScalablePushQuery(statement.getStatement(), ksqlEngine, ksqlConfig,
+            configProperties)) {
+      // log validated statements for query anonymization
+      QueryLogger.info("Transient query created", statement.getStatementText());
+      return handleScalablePushQuery(
+          securityContext.getServiceContext(),
+          statement,
+          configProperties,
+          request.getRequestProperties(),
+          connectionClosedFuture,
+          context
       );
     } else {
       // log validated statements for query anonymization
       QueryLogger.info("Transient query created", statement.getStatementText());
       return handlePushQuery(
-              securityContext.getServiceContext(),
-              statement,
-              configProperties,
-              connectionClosedFuture,
-              mediaType
+          securityContext.getServiceContext(),
+          statement,
+          configProperties,
+          connectionClosedFuture,
+          mediaType
       );
     }
   }
@@ -509,7 +506,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
           connectionClosedFuture);
 
       return EndpointResponse.ok(pullQueryStreamWriter);
-    } catch (Throwable t) {
+    } catch (final Throwable t) {
       optionalDecrementer.ifPresent(Decrementer::decrementAtMostOnce);
       throw t;
     }
@@ -536,7 +533,6 @@ public class StreamedQueryResource implements KsqlConfigurable {
         .executeScalablePushQuery(serviceContext, configured, pushRouting, routingOptions,
             plannerOptions, context);
 
-
     final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
         query,
         disconnectCheckInterval.toMillis(),
@@ -548,6 +544,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
     return EndpointResponse.ok(queryStreamWriter);
   }
 
+  @NotNull
   private EndpointResponse handleStreamPullQuery(
       final ServiceContext serviceContext,
       final DataSource dataSource,
@@ -565,9 +562,9 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     if (QueryCapacityUtil.exceedsPushQueryCapacity(ksqlEngine, ksqlRestConfig)) {
       QueryCapacityUtil.throwTooManyActivePushQueriesException(
-              ksqlEngine,
-              ksqlRestConfig,
-              statement.getStatementText()
+          ksqlEngine,
+          ksqlRestConfig,
+          statement.getStatementText()
       );
     }
 
@@ -583,19 +580,6 @@ public class StreamedQueryResource implements KsqlConfigurable {
         connectionClosedFuture
     );
 
-    // Yes, I know I'm committing a Vert.X sin here.
-    // We need an extra thread because
-    // I couldn't come up with a reliable way to stop the query from
-    // inside Streams, plus our close() method is blocking, so we can't
-    // call it from a StreamThread anyway.
-    // Clearly, this should be done on the worker pool if we were really
-    // taking this approach, but I think we should consider first-class
-    // support of some kind in Streams instead.
-    final ScheduledExecutorService scheduledExecutorService =
-        Executors.newSingleThreadScheduledExecutor(
-            new ThreadFactoryBuilder().setDaemon(true).setNameFormat("john-poc-%d").build()
-        );
-
     QueryLogger.info("Streaming query '{}'", statement.getStatementText());
 
     // query the endOffsets of the input
@@ -608,10 +592,10 @@ public class StreamedQueryResource implements KsqlConfigurable {
     final Map<TopicPartition, Long> endOffsets = getEndOffsets(topicDescription, isolationLevel);
 
     // wait for the query to pass the endOffsets
-    while(!passedEndOffsets(admin, query, endOffsets)) {
+    while (!passedEndOffsets(admin, query, endOffsets)) {
       try {
         Thread.sleep(50L);
-      } catch (InterruptedException e) {
+      } catch (final InterruptedException e) {
         log.error("Interrupted waiting for stream pull query to complete", e);
         throw new KsqlApiException("Interrupted", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
       }
@@ -624,83 +608,85 @@ public class StreamedQueryResource implements KsqlConfigurable {
   }
 
   @NotNull
-  private Map<TopicPartition, Long> getEndOffsets(TopicDescription topicDescription, IsolationLevel isolationLevel) {
-    final Map<TopicPartition, Long> endOffsets;
+  private Map<TopicPartition, Long> getEndOffsets(
+      final TopicDescription topicDescription,
+      final IsolationLevel isolationLevel) {
     final Map<TopicPartition, OffsetSpec> topicPartitions =
-            topicDescription
-                    .partitions()
-                    .stream()
-                    .map(td -> new TopicPartition(topicDescription.name(), td.partition()))
-                    .collect(toMap(identity(), tp -> OffsetSpec.latest()));
+        topicDescription
+            .partitions()
+            .stream()
+            .map(td -> new TopicPartition(topicDescription.name(), td.partition()))
+            .collect(toMap(identity(), tp -> OffsetSpec.latest()));
 
     final ListOffsetsResult listOffsetsResult = admin.listOffsets(
-            topicPartitions,
-            new ListOffsetsOptions(
-                    isolationLevel
-            )
+        topicPartitions,
+        new ListOffsetsOptions(
+            isolationLevel
+        )
     );
 
     try {
       final Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> partitionResultMap =
-              listOffsetsResult.all().get(10, TimeUnit.SECONDS);
-      endOffsets = partitionResultMap
-              .entrySet()
-              .stream()
-              .collect(toMap(Map.Entry::getKey, e -> e.getValue().offset()));
-    } catch (InterruptedException e) {
-      log.error("Admin#listOffsets("+ topicDescription.name() +") interrupted", e);
+          listOffsetsResult.all().get(10, TimeUnit.SECONDS);
+      return partitionResultMap
+          .entrySet()
+          .stream()
+          .collect(toMap(Map.Entry::getKey, e -> e.getValue().offset()));
+    } catch (final InterruptedException e) {
+      log.error("Admin#listOffsets(" + topicDescription.name() + ") interrupted", e);
       throw new KsqlApiException("Interrupted", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (ExecutionException e) {
-      log.error("Error executing Admin#listOffsets("+ topicDescription.name() +")", e);
-      throw new KsqlApiException("Internal Server Error", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (TimeoutException e) {
-      log.error("Admin#listOffsets("+ topicDescription.name() +") timed out", e);
-      throw new KsqlApiException("Backend timed out", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+    } catch (final ExecutionException e) {
+      log.error("Error executing Admin#listOffsets(" + topicDescription.name() + ")", e);
+      throw new KsqlApiException("Internal Server Error",
+          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+    } catch (final TimeoutException e) {
+      log.error("Admin#listOffsets(" + topicDescription.name() + ") timed out", e);
+      throw new KsqlApiException("Backend timed out",
+          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
     }
-    return endOffsets;
   }
 
-  private TopicDescription getTopicDescription(String sourceTopicName) {
-    final TopicDescription topicDescription;
+  private TopicDescription getTopicDescription(final String sourceTopicName) {
     final KafkaFuture<TopicDescription> topicDescriptionKafkaFuture = admin
-            .describeTopics(Collections.singletonList(sourceTopicName))
-            .values()
-            .get(sourceTopicName);
+        .describeTopics(Collections.singletonList(sourceTopicName))
+        .values()
+        .get(sourceTopicName);
 
     try {
-      topicDescription = topicDescriptionKafkaFuture.get(10, TimeUnit.SECONDS);
-    } catch (InterruptedException e) {
-      log.error("Admin#describeTopics("+ sourceTopicName +") interrupted", e);
+      return topicDescriptionKafkaFuture.get(10, TimeUnit.SECONDS);
+    } catch (final InterruptedException e) {
+      log.error("Admin#describeTopics(" + sourceTopicName + ") interrupted", e);
       throw new KsqlApiException("Interrupted", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (ExecutionException e) {
+    } catch (final ExecutionException e) {
       // CHECKSTYLE:OFF
       // TODO, there's a different logger for query errors, right?
       // CHECKSTYLE:ON
-      log.error("Error executing Admin#describeTopics("+ sourceTopicName +")", e);
-      throw new KsqlApiException("Internal Server Error", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (TimeoutException e) {
-      log.error("Admin#describeTopics("+ sourceTopicName +") timed out", e);
-      throw new KsqlApiException("Backend timed out", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+      log.error("Error executing Admin#describeTopics(" + sourceTopicName + ")", e);
+      throw new KsqlApiException("Internal Server Error",
+          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+    } catch (final TimeoutException e) {
+      log.error("Admin#describeTopics(" + sourceTopicName + ") timed out", e);
+      throw new KsqlApiException("Backend timed out",
+          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
     }
-    return topicDescription;
   }
 
   private boolean passedEndOffsets(final Admin admin,
-                                   final TransientQueryMetadata query,
-                                   final Map<TopicPartition, Long> endOffsets) {
+      final TransientQueryMetadata query,
+      final Map<TopicPartition, Long> endOffsets) {
     try {
       final ListConsumerGroupOffsetsResult result =
-              admin.listConsumerGroupOffsets(query.getQueryApplicationId());
+          admin.listConsumerGroupOffsets(query.getQueryApplicationId());
       final Map<TopicPartition, OffsetAndMetadata> metadataMap =
-              result.partitionsToOffsetAndMetadata().get();
-      for (Map.Entry<TopicPartition, Long> entry : endOffsets.entrySet()) {
+          result.partitionsToOffsetAndMetadata().get();
+      for (final Map.Entry<TopicPartition, Long> entry : endOffsets.entrySet()) {
         final OffsetAndMetadata offsetAndMetadata = metadataMap.get(entry.getKey());
         if (offsetAndMetadata == null || offsetAndMetadata.offset() < entry.getValue()) {
           return false;
         }
       }
       return true;
-    } catch (ExecutionException | InterruptedException e) {
+    } catch (final ExecutionException | InterruptedException e) {
       throw new RuntimeException(e);
     }
   }
@@ -717,9 +703,9 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     if (QueryCapacityUtil.exceedsPushQueryCapacity(ksqlEngine, ksqlRestConfig)) {
       QueryCapacityUtil.throwTooManyActivePushQueriesException(
-              ksqlEngine,
-              ksqlRestConfig,
-              statement.getStatementText()
+          ksqlEngine,
+          ksqlRestConfig,
+          statement.getStatementText()
       );
     }
 
@@ -765,10 +751,10 @@ public class StreamedQueryResource implements KsqlConfigurable {
           : possibleAlternatives.stream()
               .map(name -> "\tprint " + name + ";")
               .collect(Collectors.joining(
-              System.lineSeparator(),
-              System.lineSeparator() + "Did you mean:" + System.lineSeparator(),
-              ""
-          ));
+                  System.lineSeparator(),
+                  System.lineSeparator() + "Did you mean:" + System.lineSeparator(),
+                  ""
+              ));
 
       throw new KsqlRestException(
           Errors.badRequest(
