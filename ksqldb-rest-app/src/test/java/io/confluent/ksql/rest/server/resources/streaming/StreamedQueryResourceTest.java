@@ -50,8 +50,8 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.GenericRow;
 import io.confluent.ksql.api.server.MetricsCallbackHolder;
-import io.confluent.ksql.api.server.StreamingOutput;
 import io.confluent.ksql.api.server.SlidingWindowRateLimiter;
+import io.confluent.ksql.api.server.StreamingOutput;
 import io.confluent.ksql.config.SessionConfig;
 import io.confluent.ksql.engine.KsqlEngine;
 import io.confluent.ksql.engine.PullQueryExecutionUtil;
@@ -126,6 +126,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.apache.commons.lang3.mutable.MutableBoolean;
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KafkaStreams.State;
@@ -136,7 +137,6 @@ import org.codehaus.plexus.util.StringUtils;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matchers;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
@@ -146,9 +146,6 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
-// CHECKSTYLE:OFF
-@Ignore // TODO need to figure out how to supply an Analyser that will work.
-// CHECKSTYLE:ON
 @RunWith(MockitoJUnitRunner.class)
 @SuppressWarnings("deprecation") // https://github.com/confluentinc/ksql/issues/6639
 public class StreamedQueryResourceTest {
@@ -161,7 +158,8 @@ public class StreamedQueryResourceTest {
       .build();
 
   private static final KsqlConfig VALID_CONFIG = new KsqlConfig(ImmutableMap.of(
-      StreamsConfig.APPLICATION_SERVER_CONFIG, "something:1"
+      StreamsConfig.APPLICATION_SERVER_CONFIG, "something:1",
+      CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "anything:2"
   ));
   private static final Long closeTimeout = KsqlConfig.KSQL_SHUTDOWN_TIMEOUT_MS_DEFAULT;
 

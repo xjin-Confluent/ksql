@@ -137,7 +137,6 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
   private KsqlConfig ksqlConfig;
   private KsqlRestConfig ksqlRestConfig;
-  private Admin admin;
 
   @SuppressWarnings("checkstyle:ParameterNumber")
   public StreamedQueryResource(
@@ -236,7 +235,6 @@ public class StreamedQueryResource implements KsqlConfigurable {
     }
 
     ksqlConfig = config;
-    admin = Admin.create(config.getKsqlAdminClientConfigProps());
   }
 
   public EndpointResponse streamQuery(
@@ -589,33 +587,55 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     QueryLogger.info("Streaming query '{}'", statement.getStatementText());
 
-    // query the endOffsets of the input
-    final String sourceTopicName = dataSource.getKafkaTopicName();
-    final TopicDescription topicDescription = getTopicDescription(sourceTopicName);
-    // CHECKSTYLE:OFF
-    // TODO need to set the isolation level to match the Streams app
-    // CHECKSTYLE:ON
-    final IsolationLevel isolationLevel = IsolationLevel.READ_UNCOMMITTED;
-    final Map<TopicPartition, Long> endOffsets = getEndOffsets(topicDescription, isolationLevel);
+    try {
+      // query the endOffsets of the input
+      final String sourceTopicName = dataSource.getKafkaTopicName();
+      final TopicDescription topicDescription = getTopicDescription(
+          serviceContext.getAdminClient(),
+          sourceTopicName
+      );
 
-    // wait for the query to pass the endOffsets
-    while (!passedEndOffsets(admin, query, endOffsets)) {
-      try {
-        Thread.sleep(50L);
-      } catch (final InterruptedException e) {
-        log.error("Interrupted waiting for stream pull query to complete", e);
-        throw new KsqlApiException("Interrupted", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+      final Object processingGuarantee = configured
+          .getSessionConfig()
+          .getConfig(true)
+          .getKsqlStreamConfigProps()
+          .get(StreamsConfig.PROCESSING_GUARANTEE_CONFIG);
+
+      final IsolationLevel isolationLevel =
+          StreamsConfig.AT_LEAST_ONCE.equals(processingGuarantee)
+              ? IsolationLevel.READ_UNCOMMITTED
+              : IsolationLevel.READ_COMMITTED;
+
+      final Map<TopicPartition, Long> endOffsets = getEndOffsets(
+          serviceContext.getAdminClient(),
+          topicDescription,
+          isolationLevel
+      );
+
+      // wait for the query to pass the endOffsets
+      while (!passedEndOffsets(serviceContext.getAdminClient(), query, endOffsets)) {
+        try {
+          Thread.sleep(50L);
+        } catch (final InterruptedException e) {
+          log.error("Interrupted waiting for stream pull query to complete", e);
+          throw new KsqlApiException("Interrupted",
+              HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+        }
       }
+
+      // stop the response stream before sending the successful response.
+      queryStreamWriter.close();
+
+      return EndpointResponse.ok(queryStreamWriter);
+    } finally {
+      // safe to call twice. Be sure to close the stream in the event of any error.
+      queryStreamWriter.close();
     }
-
-    // cancel the query
-    queryStreamWriter.close();
-
-    return EndpointResponse.ok(queryStreamWriter);
   }
 
   @NotNull
   private Map<TopicPartition, Long> getEndOffsets(
+      final Admin admin,
       final TopicDescription topicDescription,
       final IsolationLevel isolationLevel) {
     final Map<TopicPartition, OffsetSpec> topicPartitions =
@@ -653,7 +673,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
     }
   }
 
-  private TopicDescription getTopicDescription(final String sourceTopicName) {
+  private TopicDescription getTopicDescription(final Admin admin, final String sourceTopicName) {
     final KafkaFuture<TopicDescription> topicDescriptionKafkaFuture = admin
         .describeTopics(Collections.singletonList(sourceTopicName))
         .values()
@@ -665,9 +685,6 @@ public class StreamedQueryResource implements KsqlConfigurable {
       log.error("Admin#describeTopics(" + sourceTopicName + ") interrupted", e);
       throw new KsqlApiException("Interrupted", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
     } catch (final ExecutionException e) {
-      // CHECKSTYLE:OFF
-      // TODO, there's a different logger for query errors, right?
-      // CHECKSTYLE:ON
       log.error("Error executing Admin#describeTopics(" + sourceTopicName + ")", e);
       throw new KsqlApiException("Internal Server Error",
           HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
