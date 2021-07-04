@@ -283,10 +283,20 @@ public class StreamedQueryResourceTest {
   }
 
   @Test
-  public void shouldThrowExceptionIfConfigDisabled() {
+  public void shouldThrowExceptionIfConfigDisabledStream() {
+    shouldThrowExceptionIfConfigDisabled(DataSourceType.KSTREAM);
+  }
+
+  @Test
+  public void shouldThrowExceptionIfConfigDisabledTable() {
+    shouldThrowExceptionIfConfigDisabled(DataSourceType.KTABLE);
+  }
+
+  private void shouldThrowExceptionIfConfigDisabled(final DataSourceType dataSourceType) {
     // Given:
     when(ksqlConfig.getKsqlStreamConfigProps())
         .thenReturn(ImmutableMap.of(StreamsConfig.APPLICATION_SERVER_CONFIG, "something:1"));
+    when(mockDataSource.getDataSourceType()).thenReturn(dataSourceType);
     testResource.configure(ksqlConfig);
 
     final String errorMsg = "Pull queries are disabled. See https://cnfl.io/queries for more info.\n"

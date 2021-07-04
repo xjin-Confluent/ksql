@@ -346,27 +346,78 @@ public class StreamedQueryResource implements KsqlConfigurable {
           .analyzeQueryWithNoOutput(statement.getStatement(), statement.getStatementText());
       final DataSource dataSource = analysis.getDataSource();
       final DataSource.DataSourceType dataSourceType = dataSource.getDataSourceType();
+
+      // First thing, set the metrics callback so that it gets called, even if we hit an error
+      final AtomicReference<PullQueryResult> resultForMetrics = new AtomicReference<>(null);
+      metricsCallbackHolder.setCallback((statusCode, requestBytes, responseBytes, startTimeNanos) -> {
+        pullQueryMetrics.ifPresent(metrics -> {
+          metrics.recordStatusCode(statusCode);
+          metrics.recordRequestSize(requestBytes);
+          final PullQueryResult r = resultForMetrics.get();
+          final PullSourceType sourceType = Optional.ofNullable(r).map(
+              PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
+          final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
+              PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
+          final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
+              PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
+          metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
+          metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
+          metrics.recordRowsReturned(
+              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
+              sourceType, planType, routingNodeType);
+          metrics.recordRowsProcessed(
+              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
+              sourceType, planType, routingNodeType);
+          pullBandRateLimiter.add(responseBytes);
+        });
+      });
+
+      if (!ksqlConfig.getBoolean(KsqlConfig.KSQL_PULL_QUERIES_ENABLE_CONFIG)) {
+        throw new KsqlStatementException(
+            "Pull queries are disabled."
+                + PullQueryValidator.PULL_QUERY_SYNTAX_HELP
+                + System.lineSeparator()
+                + "Please set " + KsqlConfig.KSQL_PULL_QUERIES_ENABLE_CONFIG + "=true to enable "
+                + "this feature."
+                + System.lineSeparator(),
+            statement.getStatementText());
+      }
+
       switch (dataSourceType) {
-        case KTABLE:
+        case KTABLE: {
+          final SessionConfig sessionConfig = SessionConfig.of(ksqlConfig, configProperties);
+          final ConfiguredStatement<Query> configured = ConfiguredStatement
+              .of(statement, sessionConfig);
           return handleTablePullQuery(
               analysis,
               securityContext.getServiceContext(),
-              statement,
-              configProperties,
+              configured,
               request.getRequestProperties(),
               isInternalRequest,
               connectionClosedFuture,
-              metricsCallbackHolder,
-                  pullBandRateLimiter
+              pullBandRateLimiter,
+              resultForMetrics
           );
-        case KSTREAM:
+        }
+        case KSTREAM: {
+          final SessionConfig sessionConfig = SessionConfig.of(ksqlConfig, configProperties);
+
+          // stream pull query overrides: start from earliest, use one  thread,
+          // and use a tight commit interval for responsiveness.
+          configProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+          configProperties.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 1);
+          configProperties.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100);
+
+          final ConfiguredStatement<Query> configured = ConfiguredStatement
+              .of(statement, sessionConfig);
+
           return handleStreamPullQuery(
               analysis,
               securityContext.getServiceContext(),
-              statement,
-              configProperties,
+              configured,
               connectionClosedFuture
           );
+        }
         default:
           throw new KsqlException("Unexpected data source type for pull query: " + dataSourceType);
       }
@@ -402,63 +453,21 @@ public class StreamedQueryResource implements KsqlConfigurable {
   private EndpointResponse handleTablePullQuery(
       final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
-      final PreparedStatement<Query> statement,
-      final Map<String, Object> configOverrides,
+      final ConfiguredStatement<Query> configured,
       final Map<String, Object> requestProperties,
       final Optional<Boolean> isInternalRequest,
       final CompletableFuture<Void> connectionClosedFuture,
-      final MetricsCallbackHolder metricsCallbackHolder,
-      final SlidingWindowRateLimiter pullBandRateLimiter
-  ) {
-    // First thing, set the metrics callback so that it gets called, even if we hit an error
-    final AtomicReference<PullQueryResult> resultForMetrics = new AtomicReference<>(null);
-    metricsCallbackHolder.setCallback((statusCode, requestBytes, responseBytes, startTimeNanos) -> {
-      pullQueryMetrics.ifPresent(metrics -> {
-        metrics.recordStatusCode(statusCode);
-        metrics.recordRequestSize(requestBytes);
-        final PullQueryResult r = resultForMetrics.get();
-        final PullSourceType sourceType = Optional.ofNullable(r).map(
-            PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
-        final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
-            PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
-        final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
-            PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
-        metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
-        metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
-        metrics.recordRowsReturned(
-            Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
-            sourceType, planType, routingNodeType);
-        metrics.recordRowsProcessed(
-            Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
-            sourceType, planType, routingNodeType);
-        pullBandRateLimiter.add(responseBytes);
-      });
-    });
-
-    final ConfiguredStatement<Query> configured = ConfiguredStatement
-        .of(statement, SessionConfig.of(ksqlConfig, configOverrides));
-
-    final SessionConfig sessionConfig = configured.getSessionConfig();
-    if (!sessionConfig.getConfig(false)
-        .getBoolean(KsqlConfig.KSQL_PULL_QUERIES_ENABLE_CONFIG)) {
-      throw new KsqlStatementException(
-          "Pull queries are disabled."
-              + PullQueryValidator.PULL_QUERY_SYNTAX_HELP
-              + System.lineSeparator()
-              + "Please set " + KsqlConfig.KSQL_PULL_QUERIES_ENABLE_CONFIG + "=true to enable "
-              + "this feature."
-              + System.lineSeparator(),
-          statement.getStatementText());
-    }
+      final SlidingWindowRateLimiter pullBandRateLimiter,
+      final AtomicReference<PullQueryResult> resultForMetrics) {
 
     final RoutingOptions routingOptions = new PullQueryConfigRoutingOptions(
-        sessionConfig.getConfig(false),
+        configured.getSessionConfig().getConfig(false),
         configured.getSessionConfig().getOverrides(),
         requestProperties
     );
 
     final PullQueryConfigPlannerOptions plannerOptions = new PullQueryConfigPlannerOptions(
-        sessionConfig.getConfig(false),
+        configured.getSessionConfig().getConfig(false),
         configured.getSessionConfig().getOverrides()
     );
 
@@ -546,23 +555,14 @@ public class StreamedQueryResource implements KsqlConfigurable {
   private EndpointResponse handleStreamPullQuery(
       final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
-      final PreparedStatement<Query> statement,
-      final Map<String, Object> streamsProperties,
+      final ConfiguredStatement<Query> configured,
       final CompletableFuture<Void> connectionClosedFuture) {
-
-    // stream pull queries always start from earliest.
-    streamsProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-    streamsProperties.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 1);
-    streamsProperties.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100);
-
-    final ConfiguredStatement<Query> configured = ConfiguredStatement
-        .of(statement, SessionConfig.of(ksqlConfig, streamsProperties));
 
     if (QueryCapacityUtil.exceedsPushQueryCapacity(ksqlEngine, ksqlRestConfig)) {
       QueryCapacityUtil.throwTooManyActivePushQueriesException(
           ksqlEngine,
           ksqlRestConfig,
-          statement.getStatementText()
+          configured.getStatementText()
       );
     }
 
@@ -578,7 +578,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
         connectionClosedFuture
     );
 
-    QueryLogger.info("Streaming query '{}'", statement.getStatementText());
+    QueryLogger.info("Streaming query '{}'", configured.getStatementText());
 
     try {
       // query the endOffsets of the input
