@@ -19,6 +19,10 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import io.confluent.ksql.KsqlExecutionContext;
 import io.confluent.ksql.ServiceInfo;
+import io.confluent.ksql.analyzer.Analysis;
+import io.confluent.ksql.analyzer.ImmutableAnalysis;
+import io.confluent.ksql.analyzer.QueryAnalyzer;
+import io.confluent.ksql.analyzer.RewrittenAnalysis;
 import io.confluent.ksql.execution.streams.RoutingOptions;
 import io.confluent.ksql.function.FunctionRegistry;
 import io.confluent.ksql.internal.KsqlEngineMetrics;
@@ -27,13 +31,16 @@ import io.confluent.ksql.logging.processing.ProcessingLogContext;
 import io.confluent.ksql.metastore.MetaStore;
 import io.confluent.ksql.metastore.MetaStoreImpl;
 import io.confluent.ksql.metastore.MutableMetaStore;
+import io.confluent.ksql.metastore.model.DataSource.DataSourceType;
 import io.confluent.ksql.metrics.StreamsErrorCollector;
 import io.confluent.ksql.name.SourceName;
+import io.confluent.ksql.parser.KsqlParser;
 import io.confluent.ksql.parser.KsqlParser.ParsedStatement;
 import io.confluent.ksql.parser.KsqlParser.PreparedStatement;
 import io.confluent.ksql.parser.tree.ExecutableDdlStatement;
 import io.confluent.ksql.parser.tree.Query;
 import io.confluent.ksql.parser.tree.QueryContainer;
+import io.confluent.ksql.parser.tree.Sink;
 import io.confluent.ksql.parser.tree.Statement;
 import io.confluent.ksql.physical.pull.HARouting;
 import io.confluent.ksql.physical.pull.PullQueryResult;
@@ -282,6 +289,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
 
   @Override
   public ScalablePushQueryMetadata executeScalablePushQuery(
+      final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
       final ConfiguredStatement<Query> statement,
       final PushRouting pushRouting,
@@ -291,13 +299,14 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
   ) {
     final ScalablePushQueryMetadata query = EngineExecutor
         .create(primaryContext, serviceContext, statement.getSessionConfig())
-        .executeScalablePushQuery(statement, pushRouting, pushRoutingOptions, queryPlannerOptions,
+        .executeScalablePushQuery(analysis, statement, pushRouting, pushRoutingOptions, queryPlannerOptions,
             context);
     return query;
   }
 
   @Override
   public PullQueryResult executePullQuery(
+      final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
       final ConfiguredStatement<Query> statement,
       final HARouting routing,
@@ -313,6 +322,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
             statement.getSessionConfig()
         )
         .executePullQuery(
+            analysis,
             statement,
             routing,
             routingOptions,
@@ -364,6 +374,25 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
     return statement instanceof ExecutableDdlStatement
         || statement instanceof QueryContainer
         || statement instanceof Query;
+  }
+
+  public DataSourceType getQueryDataSourceType(final PreparedStatement<Query> statement) {
+    return null;
+  }
+
+  public ImmutableAnalysis analyzeQueryWithNoOutput(final Query query, final String queryText) {
+    final QueryAnalyzer queryAnalyzer = new QueryAnalyzer(getMetaStore(), "");
+    final Analysis analysis;
+    try {
+      analysis = queryAnalyzer.analyze(query, Optional.empty());
+    } catch (final KsqlException e) {
+      throw new KsqlStatementException(e.getMessage(), queryText, e);
+    }
+    final ImmutableAnalysis immutableAnalysis = new RewrittenAnalysis(
+        analysis,
+        new QueryExecutionUtil.ColumnReferenceRewriter()::process
+    );
+    return immutableAnalysis;
   }
 
   private static final class CleanupListener implements QueryEventListener {

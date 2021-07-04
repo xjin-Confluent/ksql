@@ -49,6 +49,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.GenericRow;
+import io.confluent.ksql.analyzer.ImmutableAnalysis;
 import io.confluent.ksql.api.server.MetricsCallbackHolder;
 import io.confluent.ksql.api.server.SlidingWindowRateLimiter;
 import io.confluent.ksql.api.server.StreamingOutput;
@@ -59,6 +60,8 @@ import io.confluent.ksql.exception.KsqlTopicAuthorizationException;
 import io.confluent.ksql.execution.streams.RoutingFilter.RoutingFilterFactory;
 import io.confluent.ksql.logging.query.QueryLogger;
 import io.confluent.ksql.metastore.MetaStore;
+import io.confluent.ksql.metastore.model.DataSource;
+import io.confluent.ksql.metastore.model.DataSource.DataSourceType;
 import io.confluent.ksql.name.ColumnName;
 import io.confluent.ksql.parser.KsqlParser.PreparedStatement;
 import io.confluent.ksql.parser.tree.PrintTopic;
@@ -225,7 +228,9 @@ public class StreamedQueryResourceTest {
   @Mock
   private Context context;
   @Mock
-  private MetaStore metaStore;
+  private ImmutableAnalysis mockAnalysis;
+  @Mock
+  private DataSource mockDataSource;
 
   private StreamedQueryResource testResource;
   private PreparedStatement<Statement> invalid;
@@ -247,7 +252,9 @@ public class StreamedQueryResourceTest {
     when(errorsHandler.accessDeniedFromKafkaResponse(any(Exception.class))).thenReturn(AUTHORIZATION_ERROR_RESPONSE);
     when(errorsHandler.generateResponse(exception.capture(), any()))
         .thenReturn(EndpointResponse.failed(500));
-    when(mockKsqlEngine.getMetaStore()).thenReturn(metaStore);
+    when(mockKsqlEngine.analyzeQueryWithNoOutput(any(), any())).thenReturn(mockAnalysis);
+    when(mockAnalysis.getDataSource()).thenReturn(mockDataSource);
+    when(mockDataSource.getDataSourceType()).thenReturn(DataSourceType.KSTREAM);
 
     securityContext = new KsqlSecurityContext(Optional.empty(), serviceContext);
 
@@ -361,9 +368,10 @@ public class StreamedQueryResourceTest {
         Optional.empty()
     );
     testResource.configure(VALID_CONFIG);
-    when(mockKsqlEngine.executePullQuery(any(), any(), any(), any(), any(), any(), anyBoolean()))
+    when(mockKsqlEngine.executePullQuery(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
         .thenReturn(pullQueryResult);
     when(pullQueryResult.getPullQueryQueue()).thenReturn(pullQueryQueue);
+    when(mockDataSource.getDataSourceType()).thenReturn(DataSourceType.KTABLE);
 
     // When:
     testResource.streamQuery(
@@ -420,6 +428,7 @@ public class StreamedQueryResourceTest {
     // Given:
     when(rateLimiter.tryAcquire()).thenReturn(true);
     when(concurrencyLimiter.increment()).thenThrow(new KsqlException("concurrencyLimiter Error!"));
+    when(mockDataSource.getDataSourceType()).thenReturn(DataSourceType.KTABLE);
 
     // When:
     final EndpointResponse response =

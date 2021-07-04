@@ -15,6 +15,7 @@
 
 package io.confluent.ksql;
 
+import io.confluent.ksql.analyzer.ImmutableAnalysis;
 import io.confluent.ksql.engine.KsqlEngine;
 import io.confluent.ksql.engine.KsqlPlan;
 import io.confluent.ksql.execution.streams.RoutingOptions;
@@ -156,6 +157,7 @@ public interface KsqlExecutionContext {
    * @return the rows that are the result of the query evaluation.
    */
   PullQueryResult executePullQuery(
+      ImmutableAnalysis analysis,
       ServiceContext serviceContext,
       ConfiguredStatement<Query> statement,
       HARouting routing,
@@ -177,6 +179,7 @@ public interface KsqlExecutionContext {
    * @return A ScalablePushQueryMetadata object
    */
   ScalablePushQueryMetadata executeScalablePushQuery(
+      ImmutableAnalysis analysis,
       ServiceContext serviceContext,
       ConfiguredStatement<Query> statement,
       PushRouting pushRouting,

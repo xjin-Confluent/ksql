@@ -23,18 +23,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.GenericRow;
-import io.confluent.ksql.analyzer.Analysis;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
 import io.confluent.ksql.analyzer.PullQueryValidator;
-import io.confluent.ksql.analyzer.QueryAnalyzer;
-import io.confluent.ksql.analyzer.RewrittenAnalysis;
 import io.confluent.ksql.api.server.KsqlApiException;
 import io.confluent.ksql.api.server.MetricsCallbackHolder;
 import io.confluent.ksql.api.server.SlidingWindowRateLimiter;
 import io.confluent.ksql.config.SessionConfig;
 import io.confluent.ksql.engine.KsqlEngine;
 import io.confluent.ksql.engine.PullQueryExecutionUtil;
-import io.confluent.ksql.engine.QueryExecutionUtil;
 import io.confluent.ksql.execution.streams.RoutingFilter.RoutingFilterFactory;
 import io.confluent.ksql.execution.streams.RoutingOptions;
 import io.confluent.ksql.internal.PullQueryExecutorMetrics;
@@ -346,22 +342,14 @@ public class StreamedQueryResource implements KsqlConfigurable {
       final SlidingWindowRateLimiter pullBandRateLimiter) {
 
     if (statement.getStatement().isPullQuery()) {
-      final QueryAnalyzer queryAnalyzer = new QueryAnalyzer(ksqlEngine.getMetaStore(), "");
-      final Analysis analysis;
-      try {
-        analysis = queryAnalyzer.analyze(statement.getStatement(), Optional.empty());
-      } catch (final KsqlException e) {
-        throw new KsqlStatementException(e.getMessage(), statement.getStatementText(), e);
-      }
-      final ImmutableAnalysis immutableAnalysis = new RewrittenAnalysis(
-          analysis,
-          new QueryExecutionUtil.ColumnReferenceRewriter()::process
-      );
-      final DataSource dataSource = immutableAnalysis.getFrom().getDataSource();
+      final ImmutableAnalysis analysis = ksqlEngine
+          .analyzeQueryWithNoOutput(statement.getStatement(), statement.getStatementText());
+      final DataSource dataSource = analysis.getDataSource();
       final DataSource.DataSourceType dataSourceType = dataSource.getDataSourceType();
       switch (dataSourceType) {
         case KTABLE:
           return handleTablePullQuery(
+              analysis,
               securityContext.getServiceContext(),
               statement,
               configProperties,
@@ -373,8 +361,8 @@ public class StreamedQueryResource implements KsqlConfigurable {
           );
         case KSTREAM:
           return handleStreamPullQuery(
+              analysis,
               securityContext.getServiceContext(),
-              dataSource,
               statement,
               configProperties,
               connectionClosedFuture
@@ -385,9 +373,11 @@ public class StreamedQueryResource implements KsqlConfigurable {
     } else if (ScalablePushUtil
         .isScalablePushQuery(statement.getStatement(), ksqlEngine, ksqlConfig,
             configProperties)) {
-      // log validated statements for query anonymization
+      final ImmutableAnalysis analysis = ksqlEngine
+          .analyzeQueryWithNoOutput(statement.getStatement(), statement.getStatementText());
       QueryLogger.info("Transient query created", statement.getStatementText());
       return handleScalablePushQuery(
+          analysis,
           securityContext.getServiceContext(),
           statement,
           configProperties,
@@ -410,6 +400,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
   @NotNull
   private EndpointResponse handleTablePullQuery(
+      final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
       final PreparedStatement<Query> statement,
       final Map<String, Object> configOverrides,
@@ -489,6 +480,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     try {
       final PullQueryResult result = ksqlEngine.executePullQuery(
+          analysis,
           serviceContext,
           configured,
           routing,
@@ -518,6 +510,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
   }
 
   private EndpointResponse handleScalablePushQuery(
+      final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
       final PreparedStatement<Query> statement,
       final Map<String, Object> configOverrides,
@@ -535,7 +528,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
         new PushQueryConfigPlannerOptions(ksqlConfig, configOverrides);
 
     final ScalablePushQueryMetadata query = ksqlEngine
-        .executeScalablePushQuery(serviceContext, configured, pushRouting, routingOptions,
+        .executeScalablePushQuery(analysis, serviceContext, configured, pushRouting, routingOptions,
             plannerOptions, context);
 
     final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
@@ -551,8 +544,8 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
   @NotNull
   private EndpointResponse handleStreamPullQuery(
+      final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
-      final DataSource dataSource,
       final PreparedStatement<Query> statement,
       final Map<String, Object> streamsProperties,
       final CompletableFuture<Void> connectionClosedFuture) {
@@ -589,7 +582,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     try {
       // query the endOffsets of the input
-      final String sourceTopicName = dataSource.getKafkaTopicName();
+      final String sourceTopicName = analysis.getDataSource().getKafkaTopicName();
       final TopicDescription topicDescription = getTopicDescription(
           serviceContext.getAdminClient(),
           sourceTopicName

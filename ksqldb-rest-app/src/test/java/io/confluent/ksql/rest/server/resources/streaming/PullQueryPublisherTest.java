@@ -156,7 +156,7 @@ public class PullQueryPublisherTest {
       times[0]++;
       return null;
     }).when(pullQueryQueue).drainTo(any());
-    when(engine.executePullQuery(any(), any(), any(), any(), any(), any(), anyBoolean()))
+    when(engine.executePullQuery(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
         .thenReturn(pullQueryResult);
     when(exec.submit(any(Runnable.class))).thenAnswer(inv -> {
       Runnable runnable = inv.getArgument(0);
@@ -185,7 +185,7 @@ public class PullQueryPublisherTest {
 
     // Then:
     verify(engine).executePullQuery(
-        eq(serviceContext), eq(statement), eq(haRouting), any(), any(), eq(Optional.empty()),
+        any(), eq(serviceContext), eq(statement), eq(haRouting), any(), any(), eq(Optional.empty()),
         anyBoolean());
   }
 
@@ -200,7 +200,7 @@ public class PullQueryPublisherTest {
     // Then:
     verify(subscriber).onNext(any());
     verify(engine).executePullQuery(
-        eq(serviceContext), eq(statement), eq(haRouting), any(), any(),
+        any(), eq(serviceContext), eq(statement), eq(haRouting), any(), any(),
         eq(Optional.empty()), anyBoolean());
   }
 
@@ -236,7 +236,7 @@ public class PullQueryPublisherTest {
   @Test
   public void shouldCallOnErrorOnFailure_initial() {
     // Given:
-    when(engine.executePullQuery(any(), any(), any(), any(), any(), any(), anyBoolean()))
+    when(engine.executePullQuery(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
         .thenThrow(new RuntimeException("Boom!"));
 
     // When:
