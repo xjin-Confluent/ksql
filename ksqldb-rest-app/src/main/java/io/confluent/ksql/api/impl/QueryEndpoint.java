@@ -18,6 +18,7 @@ package io.confluent.ksql.api.impl;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
+import io.confluent.ksql.api.server.KsqlApiException;
 import io.confluent.ksql.api.server.MetricsCallbackHolder;
 import io.confluent.ksql.api.server.QueryHandle;
 import io.confluent.ksql.api.server.SlidingWindowRateLimiter;
@@ -57,11 +58,13 @@ import io.confluent.ksql.schema.utils.FormatOptions;
 import io.confluent.ksql.services.ServiceContext;
 import io.confluent.ksql.statement.ConfiguredStatement;
 import io.confluent.ksql.util.KsqlConfig;
+import io.confluent.ksql.util.KsqlServerException;
 import io.confluent.ksql.util.KsqlStatementException;
 import io.confluent.ksql.util.PushQueryMetadata;
 import io.confluent.ksql.util.ScalablePushQueryMetadata;
 import io.confluent.ksql.util.TransientQueryMetadata;
 import io.confluent.ksql.util.VertxUtils;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Context;
 import io.vertx.core.WorkerExecutor;
 import java.util.List;
@@ -149,11 +152,13 @@ public class QueryEndpoint {
               metricsCallbackHolder
           );
         case KSTREAM:
-          throw new KsqlStatementException(
-              "Unexpected data source type for pull query: " + dataSourceType,
-              statement.getStatementText()
+          return createStreamPullQueryPublisher(
+              context,
+              serviceContext,
+              analysis,
+              statement,
+              workerExecutor
           );
-
         default:
           throw new KsqlStatementException(
               "Unexpected data source type for pull query: " + dataSourceType,
@@ -227,6 +232,47 @@ public class QueryEndpoint {
 
     publisher.setQueryHandle(new KsqlQueryHandle(queryMetadata), false, false);
 
+    return publisher;
+  }
+
+  private QueryPublisher createStreamPullQueryPublisher(
+      final Context context,
+      final ServiceContext serviceContext,
+      final ImmutableAnalysis analysis,
+      final ConfiguredStatement<Query> statement,
+      final WorkerExecutor workerExecutor) {
+
+    final BlockingQueryPublisher publisher = new BlockingQueryPublisher(context, workerExecutor);
+
+    if (QueryCapacityUtil.exceedsPushQueryCapacity(ksqlEngine, ksqlRestConfig)) {
+      QueryCapacityUtil.throwTooManyActivePushQueriesException(
+          ksqlEngine,
+          ksqlRestConfig,
+          statement.getStatementText()
+      );
+    }
+
+    try {
+      ksqlEngine
+          .executeStreamPullQuery(
+              serviceContext,
+              analysis,
+              statement,
+              true,
+              queryMetadata -> {
+                localCommands.ifPresent(lc -> lc.write(queryMetadata));
+                publisher.setQueryHandle(
+                    new KsqlQueryHandle(queryMetadata),
+                    false,
+                    false
+                );
+              }
+          );
+    } catch (final KsqlServerException e) {
+      throw new KsqlApiException(e.getMessage(), HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+    } finally {
+      publisher.close();
+    }
     return publisher;
   }
 
