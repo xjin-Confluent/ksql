@@ -338,8 +338,9 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
 
       // query the endOffsets of the input
       final String sourceTopicName = analysis.getDataSource().getKafkaTopicName();
+      final Admin admin = serviceContext.getAdminClient();
       final TopicDescription topicDescription = getTopicDescription(
-          serviceContext.getAdminClient(),
+          admin,
           sourceTopicName
       );
 
@@ -355,13 +356,13 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
               : IsolationLevel.READ_COMMITTED;
 
       final Map<TopicPartition, Long> endOffsets = getEndOffsets(
-          serviceContext.getAdminClient(),
+          admin,
           topicDescription,
           isolationLevel
       );
 
       // wait for the query to pass the endOffsets
-      while (!passedEndOffsets(serviceContext.getAdminClient(), query, endOffsets)) {
+      while (!passedEndOffsets(admin, transientQueryMetadata, endOffsets)) {
         try {
           Thread.sleep(50L);
         } catch (final InterruptedException e) {
@@ -432,8 +433,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
       throw new KsqlServerException("Internal Server Error");
     } catch (final TimeoutException e) {
       log.error("Admin#listOffsets(" + topicDescription.name() + ") timed out", e);
-      throw new KsqlApiException("Backend timed out",
-          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+      throw new KsqlServerException("Backend timed out");
     }
   }
 
