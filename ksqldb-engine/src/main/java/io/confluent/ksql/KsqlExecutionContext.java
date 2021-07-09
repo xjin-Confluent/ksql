@@ -46,6 +46,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * The context in which statements can be executed.
@@ -139,10 +140,22 @@ public interface KsqlExecutionContext {
    * Executes a query using the supplied service context.
    * @return the query metadata
    */
-  TransientQueryMetadata executeQuery(
+  TransientQueryMetadata executeTransientQuery(
       ServiceContext serviceContext,
       ConfiguredStatement<Query> statement,
       boolean excludeTombstones
+  );
+
+  /**
+   * Executes a query using the supplied service context.
+   * @return the query metadata
+   */
+  void executeStreamPullQuery(
+      ServiceContext serviceContext,
+      ImmutableAnalysis analysis,
+      ConfiguredStatement<Query> statement,
+      boolean excludeTombstones,
+      Consumer<TransientQueryMetadata> queryResultHandler
   );
 
   /**

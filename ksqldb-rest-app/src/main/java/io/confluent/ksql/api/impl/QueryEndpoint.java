@@ -57,7 +57,6 @@ import io.confluent.ksql.schema.utils.FormatOptions;
 import io.confluent.ksql.services.ServiceContext;
 import io.confluent.ksql.statement.ConfiguredStatement;
 import io.confluent.ksql.util.KsqlConfig;
-import io.confluent.ksql.util.KsqlException;
 import io.confluent.ksql.util.KsqlStatementException;
 import io.confluent.ksql.util.PushQueryMetadata;
 import io.confluent.ksql.util.ScalablePushQueryMetadata;
@@ -154,6 +153,7 @@ public class QueryEndpoint {
               "Unexpected data source type for pull query: " + dataSourceType,
               statement.getStatementText()
           );
+
         default:
           throw new KsqlStatementException(
               "Unexpected data source type for pull query: " + dataSourceType,
@@ -221,7 +221,7 @@ public class QueryEndpoint {
     }
 
     final TransientQueryMetadata queryMetadata = ksqlEngine
-        .executeQuery(serviceContext, statement, true);
+        .executeTransientQuery(serviceContext, statement, true);
 
     localCommands.ifPresent(lc -> lc.write(queryMetadata));
 

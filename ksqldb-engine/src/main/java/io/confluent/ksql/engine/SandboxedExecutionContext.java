@@ -154,7 +154,7 @@ final class SandboxedExecutionContext implements KsqlExecutionContext {
   }
 
   @Override
-  public TransientQueryMetadata executeQuery(
+  public TransientQueryMetadata executeTransientQuery(
       final ServiceContext serviceContext,
       final ConfiguredStatement<Query> statement,
       final boolean excludeTombstones

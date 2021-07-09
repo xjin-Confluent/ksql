@@ -134,7 +134,7 @@ final class PushQueryPublisher implements Flow.Publisher<Collection<StreamedRow>
               plannerOptions, context);
     } else {
       queryMetadata = ksqlEngine
-          .executeQuery(serviceContext, query, true);
+          .executeTransientQuery(serviceContext, query, true);
 
       localCommands.ifPresent(lc -> lc.write((TransientQueryMetadata) queryMetadata));
     }

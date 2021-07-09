@@ -21,6 +21,7 @@ import static java.util.stream.Collectors.toMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.GenericRow;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
@@ -68,6 +69,7 @@ import io.confluent.ksql.services.ServiceContext;
 import io.confluent.ksql.statement.ConfiguredStatement;
 import io.confluent.ksql.util.KsqlConfig;
 import io.confluent.ksql.util.KsqlException;
+import io.confluent.ksql.util.KsqlServerException;
 import io.confluent.ksql.util.KsqlStatementException;
 import io.confluent.ksql.util.ScalablePushQueryMetadata;
 import io.confluent.ksql.util.TransientQueryMetadata;
@@ -177,7 +179,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
   }
 
   @VisibleForTesting
-  // CHECKSTYLE_RULES.OFF: ParameterNumberCheck
+    // CHECKSTYLE_RULES.OFF: ParameterNumberCheck
   StreamedQueryResource(
       // CHECKSTYLE_RULES.OFF: ParameterNumberCheck
       final KsqlEngine ksqlEngine,
@@ -349,28 +351,29 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
       // First thing, set the metrics callback so that it gets called, even if we hit an error
       final AtomicReference<PullQueryResult> resultForMetrics = new AtomicReference<>(null);
-      metricsCallbackHolder.setCallback((statusCode, requestBytes, responseBytes, startTimeNanos) -> {
-        pullQueryMetrics.ifPresent(metrics -> {
-          metrics.recordStatusCode(statusCode);
-          metrics.recordRequestSize(requestBytes);
-          final PullQueryResult r = resultForMetrics.get();
-          final PullSourceType sourceType = Optional.ofNullable(r).map(
-              PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
-          final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
-              PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
-          final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
-              PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
-          metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
-          metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
-          metrics.recordRowsReturned(
-              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
-              sourceType, planType, routingNodeType);
-          metrics.recordRowsProcessed(
-              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
-              sourceType, planType, routingNodeType);
-          pullBandRateLimiter.add(responseBytes);
-        });
-      });
+      metricsCallbackHolder
+          .setCallback((statusCode, requestBytes, responseBytes, startTimeNanos) -> {
+            pullQueryMetrics.ifPresent(metrics -> {
+              metrics.recordStatusCode(statusCode);
+              metrics.recordRequestSize(requestBytes);
+              final PullQueryResult r = resultForMetrics.get();
+              final PullSourceType sourceType = Optional.ofNullable(r).map(
+                  PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
+              final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
+                  PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
+              final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
+                  PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
+              metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
+              metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
+              metrics.recordRowsReturned(
+                  Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
+                  sourceType, planType, routingNodeType);
+              metrics.recordRowsProcessed(
+                  Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
+                  sourceType, planType, routingNodeType);
+              pullBandRateLimiter.add(responseBytes);
+            });
+          });
 
       if (!ksqlConfig.getBoolean(KsqlConfig.KSQL_PULL_QUERIES_ENABLE_CONFIG)) {
         throw new KsqlStatementException(
@@ -402,15 +405,8 @@ public class StreamedQueryResource implements KsqlConfigurable {
         case KSTREAM: {
           final SessionConfig sessionConfig = SessionConfig.of(ksqlConfig, configProperties);
 
-          // stream pull query overrides: start from earliest, use one  thread,
-          // and use a tight commit interval for responsiveness.
-          configProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-          configProperties.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 1);
-          configProperties.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100);
-
           final ConfiguredStatement<Query> configured = ConfiguredStatement
               .of(statement, sessionConfig);
-
           return handleStreamPullQuery(
               analysis,
               securityContext.getServiceContext(),
@@ -566,151 +562,44 @@ public class StreamedQueryResource implements KsqlConfigurable {
       );
     }
 
-    final TransientQueryMetadata query = ksqlEngine
-        .executeQuery(serviceContext, configured, false);
-
-    localCommands.ifPresent(lc -> lc.write(query));
-
-    final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
-        query,
-        disconnectCheckInterval.toMillis(),
-        OBJECT_MAPPER,
-        connectionClosedFuture
-    );
-
-    QueryLogger.info("Streaming query '{}'", configured.getStatementText());
+    final AtomicReference<QueryStreamWriter> queryStreamWriter = new AtomicReference<>();
 
     try {
-      // query the endOffsets of the input
-      final String sourceTopicName = analysis.getDataSource().getKafkaTopicName();
-      final TopicDescription topicDescription = getTopicDescription(
-          serviceContext.getAdminClient(),
-          sourceTopicName
-      );
+      ksqlEngine
+          .executeStreamPullQuery(
+              serviceContext,
+              analysis,
+              configured,
+              false,
+              (query) -> {
+                localCommands.ifPresent(lc -> lc.write(query));
 
-      final Object processingGuarantee = configured
-          .getSessionConfig()
-          .getConfig(true)
-          .getKsqlStreamConfigProps()
-          .get(StreamsConfig.PROCESSING_GUARANTEE_CONFIG);
-
-      final IsolationLevel isolationLevel =
-          StreamsConfig.AT_LEAST_ONCE.equals(processingGuarantee)
-              ? IsolationLevel.READ_UNCOMMITTED
-              : IsolationLevel.READ_COMMITTED;
-
-      final Map<TopicPartition, Long> endOffsets = getEndOffsets(
-          serviceContext.getAdminClient(),
-          topicDescription,
-          isolationLevel
-      );
-
-      // wait for the query to pass the endOffsets
-      while (!passedEndOffsets(serviceContext.getAdminClient(), query, endOffsets)) {
-        try {
-          Thread.sleep(50L);
-        } catch (final InterruptedException e) {
-          log.error("Interrupted waiting for stream pull query to complete", e);
-          throw new KsqlApiException("Interrupted",
-              HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-        }
-      }
-
+                queryStreamWriter.set(new QueryStreamWriter(
+                    query,
+                    disconnectCheckInterval.toMillis(),
+                    OBJECT_MAPPER,
+                    connectionClosedFuture
+                ));
+              }
+          );
       // stop the response stream before sending the successful response.
-      queryStreamWriter.close();
-
-      return EndpointResponse.ok(queryStreamWriter);
-    } finally {
-      // safe to call twice. Be sure to close the stream in the event of any error.
-      queryStreamWriter.close();
-    }
-  }
-
-  @NotNull
-  private Map<TopicPartition, Long> getEndOffsets(
-      final Admin admin,
-      final TopicDescription topicDescription,
-      final IsolationLevel isolationLevel) {
-    final Map<TopicPartition, OffsetSpec> topicPartitions =
-        topicDescription
-            .partitions()
-            .stream()
-            .map(td -> new TopicPartition(topicDescription.name(), td.partition()))
-            .collect(toMap(identity(), tp -> OffsetSpec.latest()));
-
-    final ListOffsetsResult listOffsetsResult = admin.listOffsets(
-        topicPartitions,
-        new ListOffsetsOptions(
-            isolationLevel
-        )
-    );
-
-    try {
-      final Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> partitionResultMap =
-          listOffsetsResult.all().get(10, TimeUnit.SECONDS);
-      return partitionResultMap
-          .entrySet()
-          .stream()
-          .collect(toMap(Map.Entry::getKey, e -> e.getValue().offset()));
-    } catch (final InterruptedException e) {
-      log.error("Admin#listOffsets(" + topicDescription.name() + ") interrupted", e);
-      throw new KsqlApiException("Interrupted", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (final ExecutionException e) {
-      log.error("Error executing Admin#listOffsets(" + topicDescription.name() + ")", e);
-      throw new KsqlApiException("Internal Server Error",
-          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (final TimeoutException e) {
-      log.error("Admin#listOffsets(" + topicDescription.name() + ") timed out", e);
-      throw new KsqlApiException("Backend timed out",
-          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    }
-  }
-
-  private TopicDescription getTopicDescription(final Admin admin, final String sourceTopicName) {
-    final KafkaFuture<TopicDescription> topicDescriptionKafkaFuture = admin
-        .describeTopics(Collections.singletonList(sourceTopicName))
-        .values()
-        .get(sourceTopicName);
-
-    try {
-      return topicDescriptionKafkaFuture.get(10, TimeUnit.SECONDS);
-    } catch (final InterruptedException e) {
-      log.error("Admin#describeTopics(" + sourceTopicName + ") interrupted", e);
-      throw new KsqlApiException("Interrupted", HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (final ExecutionException e) {
-      log.error("Error executing Admin#describeTopics(" + sourceTopicName + ")", e);
-      throw new KsqlApiException("Internal Server Error",
-          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } catch (final TimeoutException e) {
-      log.error("Admin#describeTopics(" + sourceTopicName + ") timed out", e);
-      throw new KsqlApiException("Backend timed out",
-          HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    }
-  }
-
-  private boolean passedEndOffsets(final Admin admin,
-      final TransientQueryMetadata query,
-      final Map<TopicPartition, Long> endOffsets) {
-    try {
-      final ListConsumerGroupOffsetsResult result =
-          admin.listConsumerGroupOffsets(query.getQueryApplicationId());
-      final Map<TopicPartition, OffsetAndMetadata> metadataMap =
-          result.partitionsToOffsetAndMetadata().get();
-      for (final Map.Entry<TopicPartition, Long> entry : endOffsets.entrySet()) {
-        if (entry.getValue() == 0) {
-          // special case where we expect no work at all on the partition, so we don't even
-          // need to check the committed offset (if we did, we'd potentially wait forever, since
-          // Streams won't commit anything for an empty topic).
-          continue;
-        }
-        final OffsetAndMetadata offsetAndMetadata = metadataMap.get(entry.getKey());
-        if (offsetAndMetadata == null || offsetAndMetadata.offset() < entry.getValue()) {
-          return false;
-        }
+      final QueryStreamWriter writer = queryStreamWriter.get();
+      if (writer != null) {
+        writer.close();
+        return EndpointResponse.ok(queryStreamWriter);
+      } else {
+        throw new IllegalStateException(
+            "Somehow, we completed a Stream Pull Query without initializing the queryStreamWriter"
+        );
       }
-      return true;
-    } catch (final ExecutionException | InterruptedException e) {
-      throw new RuntimeException(e);
+    } catch (final KsqlServerException e) {
+      throw new KsqlApiException(e.getMessage(), HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
+    } finally {
+      // Be sure to close the stream in the event of any error.
+      final QueryStreamWriter writer = queryStreamWriter.get();
+      if (writer != null) {
+        writer.close(); // idempotent
+      }
     }
   }
 
@@ -733,7 +622,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
     }
 
     final TransientQueryMetadata query = ksqlEngine
-        .executeQuery(serviceContext, configured, false);
+        .executeTransientQuery(serviceContext, configured, false);
 
     localCommands.ifPresent(lc -> lc.write(query));
 

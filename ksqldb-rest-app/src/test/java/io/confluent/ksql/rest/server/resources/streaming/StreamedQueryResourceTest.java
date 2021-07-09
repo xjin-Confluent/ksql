@@ -775,7 +775,7 @@ public class StreamedQueryResourceTest {
         );
     transientQueryMetadata.initialize();
 
-    when(mockKsqlEngine.executeQuery(serviceContext,
+    when(mockKsqlEngine.executeTransientQuery(serviceContext,
         ConfiguredStatement
             .of(query, SessionConfig.of(VALID_CONFIG, requestStreamsProperties)), false))
         .thenReturn(transientQueryMetadata);
