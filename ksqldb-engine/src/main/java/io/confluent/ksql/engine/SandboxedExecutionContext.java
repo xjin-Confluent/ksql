@@ -167,7 +167,7 @@ final class SandboxedExecutionContext implements KsqlExecutionContext {
   }
 
   @Override
-  public PullQueryResult executePullQuery(
+  public PullQueryResult executeTablePullQuery(
       final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
       final ConfiguredStatement<Query> statement,
@@ -181,7 +181,7 @@ final class SandboxedExecutionContext implements KsqlExecutionContext {
         engineContext,
         serviceContext,
         statement.getSessionConfig()
-    ).executePullQuery(
+    ).executeTablePullQuery(
         analysis,
         statement,
         routing,

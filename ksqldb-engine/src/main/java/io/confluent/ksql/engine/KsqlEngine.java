@@ -34,13 +34,11 @@ import io.confluent.ksql.metastore.MutableMetaStore;
 import io.confluent.ksql.metastore.model.DataSource.DataSourceType;
 import io.confluent.ksql.metrics.StreamsErrorCollector;
 import io.confluent.ksql.name.SourceName;
-import io.confluent.ksql.parser.KsqlParser;
 import io.confluent.ksql.parser.KsqlParser.ParsedStatement;
 import io.confluent.ksql.parser.KsqlParser.PreparedStatement;
 import io.confluent.ksql.parser.tree.ExecutableDdlStatement;
 import io.confluent.ksql.parser.tree.Query;
 import io.confluent.ksql.parser.tree.QueryContainer;
-import io.confluent.ksql.parser.tree.Sink;
 import io.confluent.ksql.parser.tree.Statement;
 import io.confluent.ksql.physical.pull.HARouting;
 import io.confluent.ksql.physical.pull.PullQueryResult;
@@ -305,7 +303,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
   }
 
   @Override
-  public PullQueryResult executePullQuery(
+  public PullQueryResult executeTablePullQuery(
       final ImmutableAnalysis analysis,
       final ServiceContext serviceContext,
       final ConfiguredStatement<Query> statement,
@@ -321,7 +319,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
             serviceContext,
             statement.getSessionConfig()
         )
-        .executePullQuery(
+        .executeTablePullQuery(
             analysis,
             statement,
             routing,

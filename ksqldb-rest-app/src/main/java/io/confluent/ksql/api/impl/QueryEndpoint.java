@@ -134,7 +134,7 @@ public class QueryEndpoint {
     if (statement.getStatement().isPullQuery()) {
       final ImmutableAnalysis analysis = ksqlEngine
           .analyzeQueryWithNoOutput(statement.getStatement(), statement.getStatementText());
-      return createPullQueryPublisher(
+      return createTablePullQueryPublisher(
           analysis, context, serviceContext, statement, pullQueryMetrics, workerExecutor,
           metricsCallbackHolder);
     } else if (ScalablePushUtil.isScalablePushQuery(statement.getStatement(), ksqlEngine,
@@ -207,7 +207,7 @@ public class QueryEndpoint {
     return publisher;
   }
 
-  private QueryPublisher createPullQueryPublisher(
+  private QueryPublisher createTablePullQueryPublisher(
       final ImmutableAnalysis analysis,
       final Context context,
       final ServiceContext serviceContext,
@@ -257,7 +257,7 @@ public class QueryEndpoint {
     pullBandRateLimiter.allow();
 
     try {
-      final PullQueryResult result = ksqlEngine.executePullQuery(
+      final PullQueryResult result = ksqlEngine.executeTablePullQuery(
           analysis,
           serviceContext,
           statement,

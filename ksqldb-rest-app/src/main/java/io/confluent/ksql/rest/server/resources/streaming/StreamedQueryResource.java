@@ -488,7 +488,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
     final Optional<Decrementer> optionalDecrementer = Optional.ofNullable(decrementer);
 
     try {
-      final PullQueryResult result = ksqlEngine.executePullQuery(
+      final PullQueryResult result = ksqlEngine.executeTablePullQuery(
           analysis,
           serviceContext,
           configured,

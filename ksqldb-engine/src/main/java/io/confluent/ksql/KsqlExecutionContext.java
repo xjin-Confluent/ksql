@@ -156,7 +156,7 @@ public interface KsqlExecutionContext {
    *                         call PullQueryResult.start to start the query.
    * @return the rows that are the result of the query evaluation.
    */
-  PullQueryResult executePullQuery(
+  PullQueryResult executeTablePullQuery(
       ImmutableAnalysis analysis,
       ServiceContext serviceContext,
       ConfiguredStatement<Query> statement,

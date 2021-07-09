@@ -113,7 +113,7 @@ class PullQueryPublisher implements Flow.Publisher<Collection<StreamedRow>> {
       final ImmutableAnalysis analysis = ksqlEngine
           .analyzeQueryWithNoOutput(query.getStatement(), query.getStatementText());
 
-      result = ksqlEngine.executePullQuery(
+      result = ksqlEngine.executeTablePullQuery(
           analysis,
           serviceContext,
           query,

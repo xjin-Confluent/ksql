@@ -167,7 +167,7 @@ final class EngineExecutor {
    * @param pullQueryMetrics JMX metrics
    * @return the rows that are the result of evaluating the pull query
    */
-  PullQueryResult executePullQuery(
+  PullQueryResult executeTablePullQuery(
       final ImmutableAnalysis analysis,
       final ConfiguredStatement<Query> statement,
       final HARouting routing,

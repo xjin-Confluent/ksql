@@ -59,7 +59,6 @@ import io.confluent.ksql.engine.PullQueryExecutionUtil;
 import io.confluent.ksql.exception.KsqlTopicAuthorizationException;
 import io.confluent.ksql.execution.streams.RoutingFilter.RoutingFilterFactory;
 import io.confluent.ksql.logging.query.QueryLogger;
-import io.confluent.ksql.metastore.MetaStore;
 import io.confluent.ksql.metastore.model.DataSource;
 import io.confluent.ksql.metastore.model.DataSource.DataSourceType;
 import io.confluent.ksql.name.ColumnName;
@@ -378,7 +377,7 @@ public class StreamedQueryResourceTest {
         Optional.empty()
     );
     testResource.configure(VALID_CONFIG);
-    when(mockKsqlEngine.executePullQuery(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
+    when(mockKsqlEngine.executeTablePullQuery(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
         .thenReturn(pullQueryResult);
     when(pullQueryResult.getPullQueryQueue()).thenReturn(pullQueryQueue);
     when(mockDataSource.getDataSourceType()).thenReturn(DataSourceType.KTABLE);
