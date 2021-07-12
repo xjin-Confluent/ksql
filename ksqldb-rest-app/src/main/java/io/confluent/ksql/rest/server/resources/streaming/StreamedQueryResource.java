@@ -21,7 +21,6 @@ import static java.util.stream.Collectors.toMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.GenericRow;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
@@ -179,7 +178,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
   }
 
   @VisibleForTesting
-    // CHECKSTYLE_RULES.OFF: ParameterNumberCheck
+  // CHECKSTYLE_RULES.OFF: ParameterNumberCheck
   StreamedQueryResource(
       // CHECKSTYLE_RULES.OFF: ParameterNumberCheck
       final KsqlEngine ksqlEngine,
@@ -351,29 +350,28 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
       // First thing, set the metrics callback so that it gets called, even if we hit an error
       final AtomicReference<PullQueryResult> resultForMetrics = new AtomicReference<>(null);
-      metricsCallbackHolder
-          .setCallback((statusCode, requestBytes, responseBytes, startTimeNanos) -> {
-            pullQueryMetrics.ifPresent(metrics -> {
-              metrics.recordStatusCode(statusCode);
-              metrics.recordRequestSize(requestBytes);
-              final PullQueryResult r = resultForMetrics.get();
-              final PullSourceType sourceType = Optional.ofNullable(r).map(
-                  PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
-              final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
-                  PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
-              final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
-                  PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
-              metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
-              metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
-              metrics.recordRowsReturned(
-                  Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
-                  sourceType, planType, routingNodeType);
-              metrics.recordRowsProcessed(
-                  Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
-                  sourceType, planType, routingNodeType);
-              pullBandRateLimiter.add(responseBytes);
-            });
-          });
+      metricsCallbackHolder.setCallback((statusCode, requestBytes, responseBytes, startTimeNanos) -> {
+        pullQueryMetrics.ifPresent(metrics -> {
+          metrics.recordStatusCode(statusCode);
+          metrics.recordRequestSize(requestBytes);
+          final PullQueryResult r = resultForMetrics.get();
+          final PullSourceType sourceType = Optional.ofNullable(r).map(
+              PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
+          final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
+              PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
+          final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
+              PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
+          metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
+          metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
+          metrics.recordRowsReturned(
+              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
+              sourceType, planType, routingNodeType);
+          metrics.recordRowsProcessed(
+              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
+              sourceType, planType, routingNodeType);
+          pullBandRateLimiter.add(responseBytes);
+        });
+      });
 
       if (!ksqlConfig.getBoolean(KsqlConfig.KSQL_PULL_QUERIES_ENABLE_CONFIG)) {
         throw new KsqlStatementException(
@@ -407,6 +405,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
           final ConfiguredStatement<Query> configured = ConfiguredStatement
               .of(statement, sessionConfig);
+
           return handleStreamPullQuery(
               analysis,
               securityContext.getServiceContext(),
@@ -562,7 +561,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
       );
     }
 
-    final AtomicReference<QueryStreamWriter> queryStreamWriter = new AtomicReference<>();
+    final AtomicReference<QueryStreamWriter> queryStreamWriterReference = new AtomicReference<>();
 
     try {
       ksqlEngine
@@ -571,34 +570,37 @@ public class StreamedQueryResource implements KsqlConfigurable {
               analysis,
               configured,
               false,
-              (query) -> {
-                localCommands.ifPresent(lc -> lc.write(query));
+              queryMetadata -> {
+                localCommands.ifPresent(lc -> lc.write(queryMetadata));
 
-                queryStreamWriter.set(new QueryStreamWriter(
-                    query,
+                final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
+                    queryMetadata,
                     disconnectCheckInterval.toMillis(),
                     OBJECT_MAPPER,
                     connectionClosedFuture
-                ));
+                );
+                queryStreamWriterReference.set(queryStreamWriter);
               }
           );
+
       // stop the response stream before sending the successful response.
-      final QueryStreamWriter writer = queryStreamWriter.get();
-      if (writer != null) {
-        writer.close();
+      final QueryStreamWriter queryStreamWriter = queryStreamWriterReference.get();
+      if (queryStreamWriter != null) {
+        queryStreamWriter.close();
         return EndpointResponse.ok(queryStreamWriter);
       } else {
         throw new IllegalStateException(
             "Somehow, we completed a Stream Pull Query without initializing the queryStreamWriter"
         );
       }
+
     } catch (final KsqlServerException e) {
       throw new KsqlApiException(e.getMessage(), HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
     } finally {
-      // Be sure to close the stream in the event of any error.
-      final QueryStreamWriter writer = queryStreamWriter.get();
-      if (writer != null) {
-        writer.close(); // idempotent
+      // safe to call twice. Be sure to close the stream in the event of any error.
+      final QueryStreamWriter queryStreamWriter = queryStreamWriterReference.get();
+      if (queryStreamWriter != null) {
+        queryStreamWriter.close();
       }
     }
   }

@@ -63,7 +63,6 @@ import io.confluent.ksql.util.PersistentQueryMetadata;
 import io.confluent.ksql.util.QueryMetadata;
 import io.confluent.ksql.util.ScalablePushQueryMetadata;
 import io.confluent.ksql.util.TransientQueryMetadata;
-import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Context;
 import java.io.Closeable;
 import java.util.Collections;
@@ -308,25 +307,25 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
     }
   }
 
-  @Override
+@Override
   public void executeStreamPullQuery(
       final ServiceContext serviceContext,
       final ImmutableAnalysis analysis,
-      final ConfiguredStatement<Query> statement,
+      final ConfiguredStatement<Query> statementOrig,
       final boolean excludeTombstones,
       final Consumer<TransientQueryMetadata> queryResultHandler
   ) {
+    // stream pull query overrides: start from earliest, use one  thread,
+    // and use a tight commit interval for responsiveness.
+    final ConfiguredStatement<Query> statement = statementOrig.withConfigOverrides(
+        ImmutableMap.<String, Object>builder()
+            .putAll(statementOrig.getSessionConfig().getOverrides())
+            .put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
+            .put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 1)
+            .put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100)
+            .build()
+    );
     try {
-      // stream pull query overrides: start from earliest, use one  thread,
-      // and use a tight commit interval for responsiveness.
-      statement.withConfigOverrides(
-          ImmutableMap.<String, Object>builder()
-              .putAll(statement.getSessionConfig().getOverrides())
-              .put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-              .put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 1)
-              .put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100)
-              .build()
-      );
 
       final TransientQueryMetadata transientQueryMetadata = EngineExecutor
           .create(primaryContext, serviceContext, statement.getSessionConfig())
@@ -370,6 +369,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
           throw new KsqlServerException("Interrupted");
         }
       }
+      QueryLogger.info("Finished pull query results '{}'", statement.getStatementText());
 
     } catch (final KsqlStatementException e) {
       throw e;
