@@ -308,12 +308,11 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
   }
 
 @Override
-  public void executeStreamPullQuery(
+  public TransientQueryMetadata createStreamPullQuery(
       final ServiceContext serviceContext,
       final ImmutableAnalysis analysis,
       final ConfiguredStatement<Query> statementOrig,
-      final boolean excludeTombstones,
-      final Consumer<TransientQueryMetadata> queryResultHandler
+      final boolean excludeTombstones
   ) {
     // stream pull query overrides: start from earliest, use one  thread,
     // and use a tight commit interval for responsiveness.
@@ -331,45 +330,9 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
           .create(primaryContext, serviceContext, statement.getSessionConfig())
           .executeTransientQuery(statement, excludeTombstones);
 
-      queryResultHandler.accept(transientQueryMetadata);
-
       QueryLogger.info("Streaming pull query results '{}'", statement.getStatementText());
 
-      // query the endOffsets of the input
-      final String sourceTopicName = analysis.getDataSource().getKafkaTopicName();
-      final Admin admin = serviceContext.getAdminClient();
-      final TopicDescription topicDescription = getTopicDescription(
-          admin,
-          sourceTopicName
-      );
-
-      final Object processingGuarantee = statement
-          .getSessionConfig()
-          .getConfig(true)
-          .getKsqlStreamConfigProps()
-          .get(StreamsConfig.PROCESSING_GUARANTEE_CONFIG);
-
-      final IsolationLevel isolationLevel =
-          StreamsConfig.AT_LEAST_ONCE.equals(processingGuarantee)
-              ? IsolationLevel.READ_UNCOMMITTED
-              : IsolationLevel.READ_COMMITTED;
-
-      final Map<TopicPartition, Long> endOffsets = getEndOffsets(
-          admin,
-          topicDescription,
-          isolationLevel
-      );
-
-      // wait for the query to pass the endOffsets
-      while (!passedEndOffsets(admin, transientQueryMetadata, endOffsets)) {
-        try {
-          Thread.sleep(50L);
-        } catch (final InterruptedException e) {
-          log.error("Interrupted waiting for stream pull query to complete", e);
-          throw new KsqlServerException("Interrupted");
-        }
-      }
-      QueryLogger.info("Finished pull query results '{}'", statement.getStatementText());
+      return transientQueryMetadata;
 
     } catch (final KsqlStatementException e) {
       throw e;
@@ -377,6 +340,48 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
       // add the statement text to the KsqlException
       throw new KsqlStatementException(e.getMessage(), statement.getStatementText(), e.getCause());
     }
+  }
+
+  public void waitForStreamPullQuery(
+      final ServiceContext serviceContext,
+      final ImmutableAnalysis analysis,
+      final ConfiguredStatement<Query> statement,
+      final TransientQueryMetadata transientQueryMetadata) {
+    // query the endOffsets of the input
+    final String sourceTopicName = analysis.getDataSource().getKafkaTopicName();
+    final Admin admin = serviceContext.getAdminClient();
+    final TopicDescription topicDescription = getTopicDescription(
+        admin,
+        sourceTopicName
+    );
+
+    final Object processingGuarantee = statement
+        .getSessionConfig()
+        .getConfig(true)
+        .getKsqlStreamConfigProps()
+        .get(StreamsConfig.PROCESSING_GUARANTEE_CONFIG);
+
+    final IsolationLevel isolationLevel =
+        StreamsConfig.AT_LEAST_ONCE.equals(processingGuarantee)
+            ? IsolationLevel.READ_UNCOMMITTED
+            : IsolationLevel.READ_COMMITTED;
+
+    final Map<TopicPartition, Long> endOffsets = getEndOffsets(
+        admin,
+        topicDescription,
+        isolationLevel
+    );
+
+    // wait for the query to pass the endOffsets
+    while (!passedEndOffsets(admin, transientQueryMetadata, endOffsets)) {
+      try {
+        Thread.sleep(50L);
+      } catch (final InterruptedException e) {
+        log.error("Interrupted waiting for stream pull query to complete", e);
+        throw new KsqlServerException("Interrupted");
+      }
+    }
+    QueryLogger.info("Finished pull query results '{}'", statement.getStatementText());
   }
 
   private TopicDescription getTopicDescription(final Admin admin, final String sourceTopicName) {

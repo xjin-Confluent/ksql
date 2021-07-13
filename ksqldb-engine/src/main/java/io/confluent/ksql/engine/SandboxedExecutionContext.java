@@ -169,12 +169,11 @@ final class SandboxedExecutionContext implements KsqlExecutionContext {
   }
 
   @Override
-  public void executeStreamPullQuery(
+  public TransientQueryMetadata createStreamPullQuery(
       final ServiceContext serviceContext,
       final ImmutableAnalysis analysis,
       final ConfiguredStatement<Query> statement,
-      final boolean excludeTombstones,
-      final Consumer<TransientQueryMetadata> queryResultHandler) {
+      final boolean excludeTombstones) {
     throw new NotImplementedException("todo");
   }
 

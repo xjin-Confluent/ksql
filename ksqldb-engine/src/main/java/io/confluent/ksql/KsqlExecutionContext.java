@@ -150,12 +150,11 @@ public interface KsqlExecutionContext {
    * Executes a query using the supplied service context.
    * @return the query metadata
    */
-  void executeStreamPullQuery(
+  TransientQueryMetadata createStreamPullQuery(
       ServiceContext serviceContext,
       ImmutableAnalysis analysis,
       ConfiguredStatement<Query> statement,
-      boolean excludeTombstones,
-      Consumer<TransientQueryMetadata> queryResultHandler
+      boolean excludeTombstones
   );
 
   /**

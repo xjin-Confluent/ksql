@@ -15,7 +15,6 @@
 
 package io.confluent.ksql.rest.server.resources.streaming;
 
-import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.toMap;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -78,29 +77,14 @@ import io.vertx.core.Context;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsResult;
-import org.apache.kafka.clients.admin.ListOffsetsOptions;
-import org.apache.kafka.clients.admin.ListOffsetsResult;
-import org.apache.kafka.clients.admin.OffsetSpec;
-import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.IsolationLevel;
-import org.apache.kafka.common.KafkaFuture;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.streams.StreamsConfig;
 import org.jetbrains.annotations.NotNull;
@@ -561,47 +545,37 @@ public class StreamedQueryResource implements KsqlConfigurable {
       );
     }
 
-    final AtomicReference<QueryStreamWriter> queryStreamWriterReference = new AtomicReference<>();
+    final TransientQueryMetadata transientQueryMetadata = ksqlEngine
+        .createStreamPullQuery(
+            serviceContext,
+            analysis,
+            configured,
+            false
+        );
+    localCommands.ifPresent(lc -> lc.write(transientQueryMetadata));
+
+    final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
+        transientQueryMetadata,
+        disconnectCheckInterval.toMillis(),
+        OBJECT_MAPPER,
+        connectionClosedFuture
+    );
 
     try {
-      ksqlEngine
-          .executeStreamPullQuery(
-              serviceContext,
-              analysis,
-              configured,
-              false,
-              queryMetadata -> {
-                localCommands.ifPresent(lc -> lc.write(queryMetadata));
-
-                final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
-                    queryMetadata,
-                    disconnectCheckInterval.toMillis(),
-                    OBJECT_MAPPER,
-                    connectionClosedFuture
-                );
-                queryStreamWriterReference.set(queryStreamWriter);
-              }
-          );
-
+      ksqlEngine.waitForStreamPullQuery(
+          serviceContext,
+          analysis,
+          configured,
+          transientQueryMetadata
+      );
       // stop the response stream before sending the successful response.
-      final QueryStreamWriter queryStreamWriter = queryStreamWriterReference.get();
-      if (queryStreamWriter != null) {
-        queryStreamWriter.close();
-        return EndpointResponse.ok(queryStreamWriter);
-      } else {
-        throw new IllegalStateException(
-            "Somehow, we completed a Stream Pull Query without initializing the queryStreamWriter"
-        );
-      }
-
+      queryStreamWriter.close();
+      return EndpointResponse.ok(queryStreamWriter);
     } catch (final KsqlServerException e) {
       throw new KsqlApiException(e.getMessage(), HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
     } finally {
       // safe to call twice. Be sure to close the stream in the event of any error.
-      final QueryStreamWriter queryStreamWriter = queryStreamWriterReference.get();
-      if (queryStreamWriter != null) {
-        queryStreamWriter.close();
-      }
+      queryStreamWriter.close();
     }
   }
 

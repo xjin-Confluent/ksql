@@ -253,25 +253,28 @@ public class QueryEndpoint {
     }
 
     try {
-      ksqlEngine
-          .executeStreamPullQuery(
+      final TransientQueryMetadata transientQueryMetadata = ksqlEngine
+          .createStreamPullQuery(
               serviceContext,
               analysis,
               statement,
-              true,
-              queryMetadata -> {
-                localCommands.ifPresent(lc -> lc.write(queryMetadata));
-                publisher.setQueryHandle(
-                    new KsqlQueryHandle(queryMetadata),
-                    false,
-                    false
-                );
-              }
+              true
           );
+      localCommands.ifPresent(lc -> lc.write(transientQueryMetadata));
+      publisher.setQueryHandle(
+          new KsqlQueryHandle(transientQueryMetadata) {
+            @Override
+            public void start() {
+              super.start();
+              // after starting Streams, poll until the query is complete.
+              ksqlEngine.waitForStreamPullQuery(serviceContext, analysis, statement, transientQueryMetadata);
+            }
+          },
+          false,
+          false
+      );
     } catch (final KsqlServerException e) {
       throw new KsqlApiException(e.getMessage(), HttpResponseStatus.INTERNAL_SERVER_ERROR.code());
-    } finally {
-      publisher.close();
     }
     return publisher;
   }

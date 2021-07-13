@@ -376,7 +376,12 @@ public class ClientIntegrationTest {
     assertThat(streamedQueryResult.columnTypes(), is(PULL_QUERY_COLUMN_TYPES));
     assertThat(streamedQueryResult.queryID(), is(nullValue()));
 
-    shouldReceivePullQueryRow(streamedQueryResult);
+    shouldReceiveRows(
+        streamedQueryResult,
+        1,
+        ClientIntegrationTest::verifyPullQueryRows,
+        true
+    );
 
     assertThatEventually(streamedQueryResult::isComplete, is(true));
   }
@@ -404,11 +409,16 @@ public class ClientIntegrationTest {
     final StreamedQueryResult streamedQueryResult = client.streamQuery(PULL_QUERY_ON_STREAM).get();
 
     // Then
-    assertThat(streamedQueryResult.columnNames(), is(PULL_QUERY_COLUMN_NAMES));
-    assertThat(streamedQueryResult.columnTypes(), is(PULL_QUERY_COLUMN_TYPES));
-    assertThat(streamedQueryResult.queryID(), is(nullValue()));
+    assertThat(streamedQueryResult.columnNames(), is(TEST_COLUMN_NAMES));
+    assertThat(streamedQueryResult.columnTypes(), is(TEST_COLUMN_TYPES));
+    assertThat(streamedQueryResult.queryID(), is(notNullValue()));
 
-    shouldReceivePullQueryRow(streamedQueryResult);
+    shouldReceiveRows(
+        streamedQueryResult,
+        1,
+        rows -> verifyStreamRows(rows, 1),
+        true
+    );
 
     assertThatEventually(streamedQueryResult::isComplete, is(true));
   }
@@ -419,12 +429,12 @@ public class ClientIntegrationTest {
     final StreamedQueryResult streamedQueryResult = client.streamQuery(PULL_QUERY_ON_STREAM).get();
 
     // Then
-    assertThat(streamedQueryResult.columnNames(), is(PULL_QUERY_COLUMN_NAMES));
-    assertThat(streamedQueryResult.columnTypes(), is(PULL_QUERY_COLUMN_TYPES));
-    assertThat(streamedQueryResult.queryID(), is(nullValue()));
+    assertThat(streamedQueryResult.columnNames(), is(TEST_COLUMN_NAMES));
+    assertThat(streamedQueryResult.columnTypes(), is(TEST_COLUMN_TYPES));
+    assertThat(streamedQueryResult.queryID(), is(notNullValue()));
 
     final Row row = streamedQueryResult.poll();
-    verifyPullQueryRow(row);
+    verifyStreamRowWithIndex(row, 0);
     assertThat(streamedQueryResult.poll(), is(nullValue()));
 
     assertThatEventually(streamedQueryResult::isComplete, is(true));
@@ -1371,15 +1381,6 @@ public class ClientIntegrationTest {
     assertThat(obj.containsKey("notafield"), is(false));
     assertThat(obj.toJsonString(), is((new JsonObject(obj.getMap())).toString()));
     assertThat(obj.toString(), is(obj.toJsonString()));
-  }
-
-  private static void shouldReceivePullQueryRow(final Publisher<Row> publisher) {
-    shouldReceiveRows(
-        publisher,
-        1,
-        ClientIntegrationTest::verifyPullQueryRows,
-        true
-    );
   }
 
   private static void verifyPullQueryRows(final List<Row> rows) {
