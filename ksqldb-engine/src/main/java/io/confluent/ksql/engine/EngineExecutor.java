@@ -23,9 +23,7 @@ import io.confluent.ksql.KsqlExecutionContext.ExecuteResult;
 import io.confluent.ksql.analyzer.Analysis;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
 import io.confluent.ksql.analyzer.QueryAnalyzer;
-import io.confluent.ksql.analyzer.RewrittenAnalysis;
 import io.confluent.ksql.config.SessionConfig;
-import io.confluent.ksql.engine.QueryExecutionUtil.ColumnReferenceRewriter;
 import io.confluent.ksql.execution.ddl.commands.DdlCommand;
 import io.confluent.ksql.execution.plan.ExecutionStep;
 import io.confluent.ksql.execution.streams.RoutingOptions;
@@ -406,7 +404,8 @@ final class EngineExecutor {
     final QueryEngine queryEngine = engineContext.createQueryEngine(serviceContext);
     final KsqlConfig ksqlConfig = config.getConfig(true);
     final MetaStore metaStore = engineContext.getMetaStore();
-    final String outputPrefix = ksqlConfig.getString(KsqlConfig.KSQL_OUTPUT_TOPIC_NAME_PREFIX_CONFIG);
+    final String outputPrefix =
+        ksqlConfig.getString(KsqlConfig.KSQL_OUTPUT_TOPIC_NAME_PREFIX_CONFIG);
 
     final QueryAnalyzer queryAnalyzer =
         new QueryAnalyzer(metaStore, outputPrefix);

@@ -76,7 +76,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsResult;
@@ -307,7 +306,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
     }
   }
 
-@Override
+  @Override
   public TransientQueryMetadata createStreamPullQuery(
       final ServiceContext serviceContext,
       final ImmutableAnalysis analysis,
@@ -480,7 +479,12 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
   ) {
     final ScalablePushQueryMetadata query = EngineExecutor
         .create(primaryContext, serviceContext, statement.getSessionConfig())
-        .executeScalablePushQuery(analysis, statement, pushRouting, pushRoutingOptions, queryPlannerOptions,
+        .executeScalablePushQuery(
+            analysis,
+            statement,
+            pushRouting,
+            pushRoutingOptions,
+            queryPlannerOptions,
             context);
     return query;
   }
