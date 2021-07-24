@@ -20,6 +20,7 @@ import static io.confluent.ksql.api.client.util.ClientTestUtil.subscribeAndWait;
 import static io.confluent.ksql.test.util.AssertEventually.assertThatEventually;
 import static io.confluent.ksql.util.KsqlConfig.KSQL_DEFAULT_KEY_FORMAT_CONFIG;
 import static io.confluent.ksql.util.KsqlConfig.KSQL_STREAMS_PREFIX;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.contains;
@@ -84,6 +85,7 @@ import io.confluent.ksql.serde.Format;
 import io.confluent.ksql.serde.FormatFactory;
 import io.confluent.ksql.serde.SerdeFeature;
 import io.confluent.ksql.serde.SerdeFeatures;
+import io.confluent.ksql.test.util.AssertEventually;
 import io.confluent.ksql.util.AppInfo;
 import io.confluent.ksql.util.StructuredTypesDataProvider;
 import io.confluent.ksql.util.TestDataProvider;
@@ -101,6 +103,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -108,6 +111,8 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import kafka.zookeeper.ZooKeeperClientException;
 import org.apache.kafka.connect.data.Struct;
@@ -127,6 +132,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.rules.RuleChain;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscription;
 
 @Category({IntegrationTest.class})
 public class ClientIntegrationTest {
@@ -415,12 +421,10 @@ public class ClientIntegrationTest {
 
     shouldReceiveRows(
         streamedQueryResult,
-        1,
-        rows -> verifyStreamRows(rows, 1),
+        6,
+        rows -> verifyStreamRows(rows, 6),
         true
     );
-
-    assertThatEventually(streamedQueryResult::isComplete, is(true));
   }
 
   @Test
@@ -433,8 +437,13 @@ public class ClientIntegrationTest {
     assertThat(streamedQueryResult.columnTypes(), is(TEST_COLUMN_TYPES));
     assertThat(streamedQueryResult.queryID(), is(notNullValue()));
 
-    final Row row = streamedQueryResult.poll();
-    verifyStreamRowWithIndex(row, 0);
+    final List<Row> results = new LinkedList<>();
+    Row row = streamedQueryResult.poll();
+    while (row != null) {
+      results.add(row);
+      row = streamedQueryResult.poll();
+    }
+    verifyStreamRows(results, 6);
     assertThat(streamedQueryResult.poll(), is(nullValue()));
 
     assertThatEventually(streamedQueryResult::isComplete, is(true));

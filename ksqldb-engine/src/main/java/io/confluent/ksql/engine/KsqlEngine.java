@@ -93,7 +93,9 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+// CHECKSTYLE_RULES.OFF: ClassDataAbstractionCoupling
 public class KsqlEngine implements KsqlExecutionContext, Closeable {
+  // CHECKSTYLE_RULES.ON: ClassDataAbstractionCoupling
 
   private static final Logger log = LoggerFactory.getLogger(KsqlEngine.class);
 
@@ -380,7 +382,7 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
         throw new KsqlServerException("Interrupted");
       }
     }
-    QueryLogger.info("Finished pull query results '{}'", statement.getStatementText());
+    QueryLogger.info("Finished pull query results", statement.getStatementText());
   }
 
   private TopicDescription getTopicDescription(final Admin admin, final String sourceTopicName) {
@@ -454,10 +456,12 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
           // special case where we expect no work at all on the partition, so we don't even
           // need to check the committed offset (if we did, we'd potentially wait forever, since
           // Streams won't commit anything for an empty topic).
+          log.info("SPQ skipping " + entry);
           continue;
         }
         final OffsetAndMetadata offsetAndMetadata = metadataMap.get(entry.getKey());
         if (offsetAndMetadata == null || offsetAndMetadata.offset() < entry.getValue()) {
+          log.info("SPQ waiting on " + entry + " at " + offsetAndMetadata);
           return false;
         }
       }
