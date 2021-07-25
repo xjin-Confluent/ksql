@@ -15,8 +15,6 @@
 
 package io.confluent.ksql.rest.server.resources.streaming;
 
-import static java.util.stream.Collectors.toMap;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
@@ -519,6 +517,7 @@ public class StreamedQueryResource implements KsqlConfigurable {
         .executeScalablePushQuery(analysis, serviceContext, configured, pushRouting, routingOptions,
             plannerOptions, context);
 
+
     final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
         query,
         disconnectCheckInterval.toMillis(),
@@ -591,9 +590,9 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     if (QueryCapacityUtil.exceedsPushQueryCapacity(ksqlEngine, ksqlRestConfig)) {
       QueryCapacityUtil.throwTooManyActivePushQueriesException(
-          ksqlEngine,
-          ksqlRestConfig,
-          statement.getStatementText()
+              ksqlEngine,
+              ksqlRestConfig,
+              statement.getStatementText()
       );
     }
 
@@ -639,10 +638,10 @@ public class StreamedQueryResource implements KsqlConfigurable {
           : possibleAlternatives.stream()
               .map(name -> "\tprint " + name + ";")
               .collect(Collectors.joining(
-                  System.lineSeparator(),
-                  System.lineSeparator() + "Did you mean:" + System.lineSeparator(),
-                  ""
-              ));
+              System.lineSeparator(),
+              System.lineSeparator() + "Did you mean:" + System.lineSeparator(),
+              ""
+          ));
 
       throw new KsqlRestException(
           Errors.badRequest(

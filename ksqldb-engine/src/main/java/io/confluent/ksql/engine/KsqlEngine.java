@@ -565,10 +565,6 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
         || statement instanceof Query;
   }
 
-  public DataSourceType getQueryDataSourceType(final PreparedStatement<Query> statement) {
-    return null;
-  }
-
   public ImmutableAnalysis analyzeQueryWithNoOutput(final Query query, final String queryText) {
     final QueryAnalyzer queryAnalyzer = new QueryAnalyzer(getMetaStore(), "");
     final Analysis analysis;

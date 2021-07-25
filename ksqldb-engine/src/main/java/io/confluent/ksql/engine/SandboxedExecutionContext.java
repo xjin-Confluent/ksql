@@ -49,8 +49,8 @@ import java.util.Set;
 import org.apache.commons.lang3.NotImplementedException;
 
 /**
- * An execution context that can execute statements without changing the core engine's state or the
- * state of external services.
+ * An execution context that can execute statements without changing the core engine's state
+ * or the state of external services.
  */
 @Sandbox
 final class SandboxedExecutionContext implements KsqlExecutionContext {

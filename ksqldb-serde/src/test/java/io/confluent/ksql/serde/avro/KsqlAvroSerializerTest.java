@@ -239,9 +239,6 @@ public class KsqlAvroSerializerTest {
     assertThat(avroSchemaStoredInSchemaRegistry(), is(ORDER_AVRO_SCHEMA));
   }
 
-  // CHECKSTYLE:OFF
-  // TODO this test is brittle. Different JVMs print this message differently
-  // CHECKSTYLE:ON
   @Test
   public void shouldThrowIfNotStruct() {
     // Given:
@@ -255,7 +252,11 @@ public class KsqlAvroSerializerTest {
 
     // Then:
     assertThat(e.getCause(), (hasMessage(containsString(
-        "java.lang.Integer cannot be cast to org.apache.kafka.connect.data.Struct"))));
+        "java.lang.Integer"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "cannot be cast"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "org.apache.kafka.connect.data.Struct"))));
   }
 
   @Test
@@ -468,9 +469,6 @@ public class KsqlAvroSerializerTest {
     assertThat(avroSchemaStoredInSchemaRegistry(), is(BOOLEAN_ARRAY_AVRO_SCHEMA));
   }
 
-  // CHECKSTYLE:OFF
-  // TODO this test is brittle. Different JVMs print this message differently
-  // CHECKSTYLE:ON
   @Test
   public void shouldThrowIfNotArray() {
     // Given:
@@ -486,8 +484,12 @@ public class KsqlAvroSerializerTest {
     );
 
     // Then:
-    assertThat(e.getCause(), (hasMessage(CoreMatchers.is(
-        "java.lang.Boolean cannot be cast to java.util.List"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "java.lang.Boolean"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "cannot be cast"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "java.util.List"))));
   }
 
   @Test
@@ -676,8 +678,12 @@ public class KsqlAvroSerializerTest {
     );
 
     // Then:
-    assertThat(e.getCause(), (hasMessage(CoreMatchers.is(
-        "java.lang.Boolean cannot be cast to java.util.Map"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "java.lang.Boolean"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "cannot be cast"))));
+    assertThat(e.getCause(), (hasMessage(containsString(
+        "java.util.Map"))));
   }
 
   @Test

@@ -41,13 +41,4 @@ public final class QueryLoggerMessage {
   public QueryGuid getQueryIdentifier() {
     return queryGuid;
   }
-
-  @Override
-  public String toString() {
-    return "QueryLoggerMessage{" +
-        "message=" + message +
-        ", query='" + query + '\'' +
-        ", queryGuid=" + queryGuid +
-        '}';
-  }
 }
