@@ -22,6 +22,7 @@ import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.ksql.GenericRow;
 import io.confluent.ksql.analyzer.ImmutableAnalysis;
 import io.confluent.ksql.analyzer.PullQueryValidator;
+import io.confluent.ksql.api.server.MetricsCallback;
 import io.confluent.ksql.api.server.MetricsCallbackHolder;
 import io.confluent.ksql.api.server.SlidingWindowRateLimiter;
 import io.confluent.ksql.config.SessionConfig;
@@ -324,28 +325,29 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
       // First thing, set the metrics callback so that it gets called, even if we hit an error
       final AtomicReference<PullQueryResult> resultForMetrics = new AtomicReference<>(null);
-      metricsCallbackHolder.setCallback((statusCode, requestBytes, responseBytes, startTimeNanos) -> {
-        pullQueryMetrics.ifPresent(metrics -> {
-          metrics.recordStatusCode(statusCode);
-          metrics.recordRequestSize(requestBytes);
-          final PullQueryResult r = resultForMetrics.get();
-          final PullSourceType sourceType = Optional.ofNullable(r).map(
-              PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
-          final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
-              PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
-          final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
-              PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
-          metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
-          metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
-          metrics.recordRowsReturned(
-              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
-              sourceType, planType, routingNodeType);
-          metrics.recordRowsProcessed(
-              Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
-              sourceType, planType, routingNodeType);
-          pullBandRateLimiter.add(responseBytes);
-        });
-      });
+      final MetricsCallback metricsCallback =
+          (statusCode, requestBytes, responseBytes, startTimeNanos) ->
+              pullQueryMetrics.ifPresent(metrics -> {
+                metrics.recordStatusCode(statusCode);
+                metrics.recordRequestSize(requestBytes);
+                final PullQueryResult r = resultForMetrics.get();
+                final PullSourceType sourceType = Optional.ofNullable(r).map(
+                    PullQueryResult::getSourceType).orElse(PullSourceType.UNKNOWN);
+                final PullPhysicalPlanType planType = Optional.ofNullable(r).map(
+                    PullQueryResult::getPlanType).orElse(PullPhysicalPlanType.UNKNOWN);
+                final RoutingNodeType routingNodeType = Optional.ofNullable(r).map(
+                    PullQueryResult::getRoutingNodeType).orElse(RoutingNodeType.UNKNOWN);
+                metrics.recordResponseSize(responseBytes, sourceType, planType, routingNodeType);
+                metrics.recordLatency(startTimeNanos, sourceType, planType, routingNodeType);
+                metrics.recordRowsReturned(
+                    Optional.ofNullable(r).map(PullQueryResult::getTotalRowsReturned).orElse(0L),
+                    sourceType, planType, routingNodeType);
+                metrics.recordRowsProcessed(
+                    Optional.ofNullable(r).map(PullQueryResult::getTotalRowsProcessed).orElse(0L),
+                    sourceType, planType, routingNodeType);
+                pullBandRateLimiter.add(responseBytes);
+              });
+      metricsCallbackHolder.setCallback(metricsCallback);
 
       if (!ksqlConfig.getBoolean(KsqlConfig.KSQL_PULL_QUERIES_ENABLE_CONFIG)) {
         throw new KsqlStatementException(
@@ -358,19 +360,19 @@ public class StreamedQueryResource implements KsqlConfigurable {
             statement.getStatementText());
       }
 
-          final SessionConfig sessionConfig = SessionConfig.of(ksqlConfig, configProperties);
-          final ConfiguredStatement<Query> configured = ConfiguredStatement
-              .of(statement, sessionConfig);
-          return handleTablePullQuery(
-              analysis,
-              securityContext.getServiceContext(),
-              configured,
-              request.getRequestProperties(),
-              isInternalRequest,
-              connectionClosedFuture,
-              pullBandRateLimiter,
-              resultForMetrics
-          );
+      final SessionConfig sessionConfig = SessionConfig.of(ksqlConfig, configProperties);
+      final ConfiguredStatement<Query> configured = ConfiguredStatement
+          .of(statement, sessionConfig);
+      return handleTablePullQuery(
+          analysis,
+          securityContext.getServiceContext(),
+          configured,
+          request.getRequestProperties(),
+          isInternalRequest,
+          connectionClosedFuture,
+          pullBandRateLimiter,
+          resultForMetrics
+      );
     } else if (ScalablePushUtil
         .isScalablePushQuery(statement.getStatement(), ksqlEngine, ksqlConfig,
             configProperties)) {
@@ -489,7 +491,6 @@ public class StreamedQueryResource implements KsqlConfigurable {
         .executeScalablePushQuery(analysis, serviceContext, configured, pushRouting, routingOptions,
             plannerOptions, context);
 
-
     final QueryStreamWriter queryStreamWriter = new QueryStreamWriter(
         query,
         disconnectCheckInterval.toMillis(),
@@ -513,9 +514,9 @@ public class StreamedQueryResource implements KsqlConfigurable {
 
     if (QueryCapacityUtil.exceedsPushQueryCapacity(ksqlEngine, ksqlRestConfig)) {
       QueryCapacityUtil.throwTooManyActivePushQueriesException(
-              ksqlEngine,
-              ksqlRestConfig,
-              statement.getStatementText()
+          ksqlEngine,
+          ksqlRestConfig,
+          statement.getStatementText()
       );
     }
 
@@ -561,10 +562,10 @@ public class StreamedQueryResource implements KsqlConfigurable {
           : possibleAlternatives.stream()
               .map(name -> "\tprint " + name + ";")
               .collect(Collectors.joining(
-              System.lineSeparator(),
-              System.lineSeparator() + "Did you mean:" + System.lineSeparator(),
-              ""
-          ));
+                  System.lineSeparator(),
+                  System.lineSeparator() + "Did you mean:" + System.lineSeparator(),
+                  ""
+              ));
 
       throw new KsqlRestException(
           Errors.badRequest(
