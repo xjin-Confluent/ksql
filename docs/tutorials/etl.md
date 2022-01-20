@@ -243,7 +243,7 @@ INSERT INTO customers (id, name, age) VALUES ('2', 'bill', 51);
 
 ### Configure MongoDB for Debezium
 
-Now that Postgres is setup, you can configure MongoDB. Start by logging into the container:
+Now that Postgres is set up, you can configure MongoDB. Start by logging into the container:
 
 ```
 docker exec -it mongo /bin/bash
@@ -632,5 +632,6 @@ docker-compose down
 
 Want to learn more? Try another use case tutorial:
 
+- [Streaming ETL with Confluent: Routing and Fan-Out of Apache Kafka Messages with ksqlDB](https://www.confluent.io/blog/streaming-etl-with-confluent-kafka-message-routing-and-fan-out/)
 - [Materialized view/cache](materialized.md)
 - [Event-driven microservice](event-driven-microservice.md)

@@ -34,6 +34,7 @@ Use the Java client to:
 - [Get metadata about the ksqlDB cluster](#server-info)
 - [Manage, list and describe connectors](#connector-operations)
 - [Define variables for substitution](#variable-substitution)
+- [Execute Direct HTTP Requests](#direct-http-requests)
 
 Get started below or skip to the end for full-fledged [examples](#tutorial-examples).
 
@@ -808,6 +809,57 @@ Get all variables:
 Map<String, Object> variables = client.getVariables();
 ```
 
+Execute Direct HTTP Requests<a name="direct-http-requests"></a>
+---------------------------------------------------------------
+
+Sometimes, you need to execute requests directly against the ksqlDB server for reasons including, 
+but not limited to, accessing features in ksqlDB REST API that are not available in the API client,
+or deserializing responses into different classes that are more native to your application.
+
+For this purpose, the Client now adds an `HttpRequest` and `HttpResponse` interface that you can 
+use for sending direct requests. 
+
+### Example Usage ###
+Call the `/info` endpoint in ksqlDB with: 
+```java
+HttpResponse response = client.buildRequest("GET", "/info")
+    .send()
+    .get();
+
+// check status with
+assert response.status() == 200;
+
+// parse body (a byte[]) with:
+parseIntoJson(response.body())
+
+// or use the helper method to read body into a map:
+Map<String, Map<String, Object>> info = response.bodyAsMap();
+```
+
+Add query properties variables: 
+```java
+HttpResponse response = client.buildRequest("POST", "/ksql")
+    .payload("ksql", "CREATE STREAM FOO AS CONCAT(A, `wow;`) FROM `BAR`;")
+    .propertiesKey("streamsProperties")
+    .property("auto.offset.reset", "earliest")
+    .send()
+    .get();
+assert response.status() == 200;
+```
+
+Or build the entire payload manually: 
+```java
+HttpResponse response = client.buildRequest("POST", "/ksql")
+    .payload("ksql", "CREATE STREAM FOO AS CONCAT(A, `wow;`) FROM `BAR`;")
+    .payload("streamsProperties", Collections.singletonMap("auto.offset.reset", "earliest"))
+    .send()
+    .get();
+assert response.status() == 200;
+```
+
+The `send()` method adds authentication headers as specified in 
+[ClientOptions](api/io/confluent/ksql/api/client/ClientOptions.html).
+
 Tutorial Examples<a name="tutorial-examples"></a>
 -------------------------------------------------
 
@@ -999,7 +1051,7 @@ ClientOptions options = ClientOptions.create()
 
 Get the API key and endpoint URL from your {{ site.ccloud }} cluster.
 
-- For the the API key, see 
+- For the API key, see 
   [Create an API key for Confluent Cloud ksqlDB](https://docs.confluent.io/cloud/current/cp-component/ksqldb-ccloud-cli.html#create-an-api-key-for-ccloud-ksql-cloud-through-the-ccloud-cli).
 - For the endpoint, run the `ccloud ksql app list` command. For more information,
   see [Access a ksqlDB application in Confluent Cloud with an API key](https://docs.confluent.io/cloud/current/cp-component/ksqldb-ccloud-cli.html#access-a-ksql-cloud-application-in-ccloud-with-an-api-key).

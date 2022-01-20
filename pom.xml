@@ -19,17 +19,24 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
+    <scm>
+        <connection>scm:git:git://github.com/confluentinc/ksql.git</connection>
+        <developerConnection>scm:git:git@github.com:confluentinc/ksql.git</developerConnection>
+        <url>https://github.com/confluentinc/ksql</url>
+        <tag>HEAD</tag>
+    </scm>
+  
     <parent>
         <groupId>io.confluent</groupId>
         <artifactId>common</artifactId>
-        <version>[7.1.0-0, 7.1.1-0)</version>
+        <version>[7.2.0-0, 7.2.1-0)</version>
     </parent>
 
     <groupId>io.confluent.ksql</groupId>
     <artifactId>ksqldb-parent</artifactId>
     <packaging>pom</packaging>
     <name>ksqldb-parent</name>
-    <version>7.1.0-0</version>
+    <version>7.2.0-0</version>
 
     <licenses>
         <license>
@@ -106,7 +113,8 @@
         <antlr.version>4.7.1</antlr.version>
         <commons-text.version>1.8</commons-text.version>
         <csv.version>1.4</csv.version>
-        <lang3.version>3.3.1</lang3.version>
+        <commons.compress.version>1.21</commons.compress.version>
+        <lang3.version>3.5</lang3.version>
         <guava.version>30.1.1-jre</guava.version>
         <protobuf.version>3.17.0</protobuf.version>
         <retrying.version>2.0.0</retrying.version>
@@ -124,7 +132,7 @@
         <wiremock.version>2.24.0</wiremock.version>
         <clearspring-analytics.version>2.9.5</clearspring-analytics.version>
         <icu.version>67.1</icu.version>
-        <vertx.version>3.9.8</vertx.version>
+        <vertx.version>3.9.10</vertx.version>
         <reactive-streams.version>1.0.3</reactive-streams.version>
         <skip.docker.build>true</skip.docker.build>
         <skip.docker.test>true</skip.docker.test>
@@ -135,14 +143,14 @@
         <git-commit-id-plugin.version>2.2.6</git-commit-id-plugin.version>
         <scala.version>2.13.2</scala.version>
         <apache.io.version>2.7</apache.io.version>
-        <io.confluent.ksql.version>7.1.0-0</io.confluent.ksql.version>
+        <io.confluent.ksql.version>7.2.0-0</io.confluent.ksql.version>
         <io.confluent.schema-registry.version>${confluent.version.range}</io.confluent.schema-registry.version>
         <mockito.version>3.8.0</mockito.version>
         <netty-tcnative-version>2.0.39.Final</netty-tcnative-version>
         <!-- We normally get this from common, but Vertx is built against 4.1.49.Final -->
-        <netty.version>4.1.65.Final</netty.version>
+        <netty.version>4.1.69.Final</netty.version>
         <!-- This matches the version in common -->
-        <netty-codec-http2-version>4.1.65.Final</netty-codec-http2-version>
+        <netty-codec-http2-version>4.1.69.Final</netty-codec-http2-version>
         <!-- Brought in by both schema registry and connect, we need to pick a version -->
         <jersey-common>2.34</jersey-common>
     </properties>
@@ -317,6 +325,12 @@
 
             <dependency>
                 <groupId>io.confluent</groupId>
+                <artifactId>common-docker</artifactId>
+                <version>${io.confluent.common-docker.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.confluent</groupId>
                 <artifactId>kafka-json-schema-provider</artifactId>
                 <version>${io.confluent.schema-registry.version}</version>
             </dependency>
@@ -421,6 +435,12 @@
 
             <dependency>
                 <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons.compress.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
                 <version>${lang3.version}</version>
             </dependency>
@@ -435,6 +455,12 @@
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-text</artifactId>
                 <version>${commons-text.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons.compress.version}</version>
             </dependency>
 
             <dependency>
@@ -608,15 +634,21 @@
             <artifactId>slf4j-log4j12</artifactId>
           </dependency>
 
-            <!-- Use a repackaged version of log4j with security patches. Default log4j v1.2 is a transitive dependency of slf4j-log4j12, but it is excluded in common/pom.xml -->
-        <dependency>
-            <groupId>io.confluent</groupId>
-            <artifactId>confluent-log4j</artifactId>
-        </dependency>
         <!-- Use a repackaged version of log4j with security patches. Default log4j v1.2 is a transitive dependency of slf4j-log4j12, but it is excluded in common/pom.xml -->
         <dependency>
             <groupId>io.confluent</groupId>
             <artifactId>confluent-log4j</artifactId>
+            <version>1.2.17-cp6</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 

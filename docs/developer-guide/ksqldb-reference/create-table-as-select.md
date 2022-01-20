@@ -29,6 +29,10 @@ stream the result of the query as a changelog into the topic.
 The WINDOW clause can only be used if the `from_item` is a stream and the query contains
 a `GROUP BY` clause.
 
+!!! Tip "See CREATE TABLE AS SELECT in action"
+    - [Detect Unusual Credit Card Activity](https://confluentinc.github.io/ksqldb-recipes/anomaly-detection/credit-card-activity/#ksqldb-code)
+    - [Notify Passengers of Flight Updates](https://confluentinc.github.io/ksqldb-recipes/customer-360/aviation/#ksqldb-code)
+    - [Understand user behavior with clickstream data](https://confluentinc.github.io/ksqldb-recipes/customer-360/clickstream/#ksqldb-code)
 ### Joins
 
 Joins to streams can use any stream column. If the join criteria is not the key column of the stream
@@ -86,6 +90,8 @@ For supported [serialization formats](/reference/serialization),
 ksqlDB can integrate with the [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html).
 ksqlDB registers the value schema of the new table with {{ site.sr }} automatically. 
 The schema is registered under the subject `<topic-name>-value`.
+ksqlDB can also use [Schema Inference With ID](/operate-and-deploy/schema-inference-with-id) to enable 
+using physical schema for data serialization.
 
 ### Windowed aggregation
 
@@ -101,22 +107,25 @@ following properties:
 | ----------------- | ---------------------------------------------------------------------------------------------------- |
 | KAFKA_TOPIC       | The name of the Kafka topic that backs this table. If this property is not set, then the name of the table will be used as default. |
 | KEY_FORMAT        | Specifies the serialization format of the message key in the topic. For supported formats, see [Serialization Formats](/reference/serialization). If this property is not set, the format from the left-most input stream/table is used. |
+| KEY_SCHEMA_ID     | Specifies the schema ID of key schema in {{ site.sr }}. The schema will be used for data serialization. See [Schema Inference With Schema ID](/operate-and-deploy/schema-inference-with-id). |
 | VALUE_FORMAT      | Specifies the serialization format of the message value in the topic. For supported formats, see [Serialization Formats](/reference/serialization). If this property is not set, the format from the left-most input stream/table is used. |
+| VALUE_SCHEMA_ID   | Specifies the schema ID of value schema in {{ site.sr }}. The schema will be used for data serialization. See [Schema Inference With Schema ID](/operate-and-deploy/schema-inference-with-id). |
 | FORMAT            | Specifies the serialization format of both the message key and value in the topic. It is not valid to supply this property alongside either `KEY_FORMAT` or `VALUE_FORMAT`. For supported formats, see [Serialization Formats](/reference/serialization). |
 | VALUE_DELIMITER   | Used when VALUE_FORMAT='DELIMITED'. Supports single character to be a delimiter, defaults to ','. For space and tab delimited values you must use the special values 'SPACE' or 'TAB', not an actual space or tab character. |
 | PARTITIONS        | The number of partitions in the backing topic. If this property is not set, then the number of partitions of the input stream/table will be used. In join queries, the property values are taken from the left-most stream or table. You can't change the number of partitions on a table. To change the partition count, you must drop the table and create it again. |
 | REPLICAS          | The replication factor for the topic. If this property is not set, then the number of replicas of the input stream or table will be used. In join queries, the property values are taken from the left-most stream or table. |
 | TIMESTAMP         | Sets a column within this stream's schema to be used as the default source of `ROWTIME` for any downstream queries. Downstream queries that use time-based operations, such as windowing, will process records in this stream based on the timestamp in this column. The column will be used to set the timestamp on any records emitted to Kafka. Timestamps have a millisecond accuracy. If not supplied, the `ROWTIME` of the source stream is used. <br>**Note**: This doesn't affect the processing of the query that populates this stream. For example, given the following statement:<br><pre>CREATE STREAM foo WITH (TIMESTAMP='t2') AS<br>&#0009;SELECT * FROM bar<br>&#0009;WINDOW TUMBLING (size 10 seconds);<br>&#0009;EMIT CHANGES;</pre>The window into which each row of `bar` is placed is determined by bar's `ROWTIME`, not `t2`. |
-| TIMESTAMP_FORMAT  | Used in conjunction with TIMESTAMP. If not set the timestamp column must be of type `bigint`. If it is set, then the TIMESTAMP column must be of type varchar and have a format that can be parsed with the Java `DateTimeFormatter`. If your timestamp format has characters requiring single quotes, you can escape them with two successive single quotes, `''`, for example: `'yyyy-MM-dd''T''HH:mm:ssX'`. For more information on timestamp formats, see [DateTimeFormatter](https://cnfl.io/java-dtf). |
+| TIMESTAMP_FORMAT  | Used in conjunction with TIMESTAMP. If not set, ksqlDB timestamp column must be of type `bigint` or `timestamp`. If it is set, then the TIMESTAMP column must be of type varchar and have a format that can be parsed with the Java `DateTimeFormatter`. If your timestamp format has characters requiring single quotes, you can escape them with two successive single quotes, `''`, for example: `'yyyy-MM-dd''T''HH:mm:ssX'`. For more information on timestamp formats, see [DateTimeFormatter](https://cnfl.io/java-dtf). |
 | WRAP_SINGLE_VALUE | Controls how values are serialized where the values schema contains only a single column. The setting controls how the query will serialize values with a single-column schema.<br>If set to `true`, ksqlDB will serialize the column as a named column within a record.<br>If set to `false`, ksqlDB will serialize the column as an anonymous value.<br>If not supplied, the system default, defined by [ksql.persistence.wrap.single.values](/reference/server-configuration#ksqlpersistencewrapsinglevalues), then the format's default is used.<br>**Note:** `null` values have special meaning in ksqlDB. Care should be taken when dealing with single-column schemas where the value can be `null`. For more information, see [Single column (un)wrapping](/reference/serialization#single-field-unwrapping).<br>**Note:** Supplying this property for formats that do not support wrapping, for example `DELIMITED`, or when the value schema has multiple columns, will result in an error. |
 
 
 !!! note
-	  - To use Avro or Protobuf, you must have {{ site.sr }} enabled and
-    `ksql.schema.registry.url` must be set in the ksqlDB server configuration
-    file. See [Configure ksqlDB for Avro, Protobuf, and JSON schemas](../../operate-and-deploy/installation/server-config/avro-schema.md#configure-avro-and-schema-registry-for-ksql).
-    - Avro and Protobuf field names are not case sensitive in ksqlDB. This matches the ksqlDB
-    column name behavior.
+
+    - To use Avro or Protobuf, you must have {{ site.sr }} enabled and
+      `ksql.schema.registry.url` must be set in the ksqlDB Server configuration file.
+      See [Configure ksqlDB for Avro, Protobuf, and JSON schemas](../../operate-and-deploy/installation/server-config/avro-schema.md). 
+    - Avro and Protobuf field names are not case sensitive in ksqlDB.
+      This matches the ksqlDB column name behavior.
 
 Examples
 --------
@@ -124,6 +133,21 @@ Examples
 ```sql
 -- Derive a new view from an existing table:
 CREATE TABLE derived AS
+  SELECT
+    a,
+    b,
+    d
+  FROM source
+  WHERE A is not null
+  EMIT CHANGES;
+```
+
+```sql
+-- Derive a new view from an existing table with value serialization 
+-- schema defined by VALUE_SCHEMA_ID:
+CREATE TABLE derived WITH (
+    VALUE_SCHEMA_ID=1
+  ) AS
   SELECT
     a,
     b,

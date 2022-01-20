@@ -6,6 +6,36 @@ description: Lists changes to the ksqlDB codebase
 keywords: ksqldb, changelog
 ---
 
+Version 0.23.1
+--------------
+
+- [Announcing ksqlDB 0.23.1](https://www.confluent.io/blog/ksqldb-0-23-1-features-updates/)
+- [ksqlDB v0.23.1 changelog](https://github.com/confluentinc/ksql/blob/master/CHANGELOG.md#0231-2021-12-14)
+
+Version 0.22.0
+--------------
+
+- [Announcing ksqlDB 0.22.0](https://www.confluent.io/blog/ksqldb-0-22-new-features-major-upgrades/)
+- [ksqlDB v0.22.0 changelog](https://github.com/confluentinc/ksql/blob/master/CHANGELOG.md#0220-2021-11-03)
+
+Version 0.21.0
+--------------
+
+- [Announcing ksqlDB 0.21.0](https://www.confluent.io/blog/announcing-ksqldb-0-21-new-features-major-upgrades/)
+- [ksqlDB v0.21.0 changelog](https://github.com/confluentinc/ksql/blob/master/CHANGELOG.md#0210-2021-09-15)
+
+Version 0.20.0
+--------------
+
+- [Announcing ksqlDB 0.20.0](https://www.confluent.io/blog/ksqldb-2-0-introduces-date-and-time-data-types/)
+- [ksqlDB v0.20.0 changelog](https://github.com/confluentinc/ksql/blob/master/CHANGELOG.md#0200-2021-07-26)
+
+Version 0.19.0
+--------------
+
+- [Announcing ksqlDB 0.19.0](https://www.confluent.io/blog/ksqldb-0-19-adds-data-modeling-foreign-key-joins/)
+- [ksqlDB v0.19.0 changelog](https://github.com/confluentinc/ksql/blob/master/CHANGELOG.md#0190-2021-06-08)
+
 Version 0.18.0
 --------------
 

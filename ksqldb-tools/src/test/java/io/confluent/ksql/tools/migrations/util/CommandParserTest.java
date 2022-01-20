@@ -20,6 +20,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -57,6 +58,22 @@ public class CommandParserTest {
     assertThat(insertValues.getColumns(), is(Collections.emptyList()));
     assertThat(insertValues.getValues().size(), is(1));
     assertThat(toFieldType(insertValues.getValues().get(0)), is(55));
+  }
+
+  @Test
+  public void shouldParseInsertNullValuesStatement() {
+    // When:
+    List<SqlCommand> commands = parse("INSERT INTO FOO VALUES (NULL);");
+
+    // Then:
+    assertThat(commands.size(), is(1));
+    assertThat(commands.get(0), instanceOf(SqlInsertValues.class));
+    final SqlInsertValues insertValues = (SqlInsertValues) commands.get(0);
+
+    assertThat(insertValues.getSourceName(), is("`FOO`"));
+    assertThat(insertValues.getColumns(), is(Collections.emptyList()));
+    assertThat(insertValues.getValues().size(), is(1));
+    assertNull(toFieldType(insertValues.getValues().get(0)));
   }
 
   @Test
@@ -333,6 +350,35 @@ public class CommandParserTest {
     assertThat(commands.get(0), instanceOf(SqlCreateConnectorStatement.class));
     assertThat(commands.get(0).getCommand(), is(createConnector));
     assertThat(((SqlCreateConnectorStatement) commands.get(0)).getName(), is("`jdbc-connector`"));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).isSource(), is(true));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().size(), is(6));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().get("connector.class"), is("io.confluent.connect.jdbc.JdbcSourceConnector"));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().get("connection.url"), is("jdbc:postgresql://localhost:5432/my.db"));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().get("mode"), is("bulk"));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().get("topic.prefix"), is("jdbc-"));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().get("table.whitelist"), is("users"));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().get("key"), is("username"));
+  }
+
+  @Test
+  public void shouldParseCreateConnectorStatementWithVariables() {
+    // Given:
+    final String createConnector = "CREATE SOURCE CONNECTOR ${name} WITH(\n"
+        + "    \"connector.class\"='io.confluent.connect.jdbc.JdbcSourceConnector',\n"
+        + "    \"connection.url\"=${url},\n"
+        + "    \"mode\"='bulk',\n"
+        + "    \"topic.prefix\"='jdbc-',\n"
+        + "    \"table.whitelist\"='users',\n"
+        + "    \"key\"='username');";
+
+    // When:
+    List<SqlCommand> commands = parse(createConnector, ImmutableMap.of("url", "'jdbc:postgresql://localhost:5432/my.db'", "name", "`jdbc_connector`"));
+
+    // Then:
+    assertThat(commands.size(), is(1));
+    assertThat(commands.get(0), instanceOf(SqlCreateConnectorStatement.class));
+    assertThat(commands.get(0).getCommand(), is(createConnector));
+    assertThat(((SqlCreateConnectorStatement) commands.get(0)).getName(), is("`jdbc_connector`"));
     assertThat(((SqlCreateConnectorStatement) commands.get(0)).isSource(), is(true));
     assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().size(), is(6));
     assertThat(((SqlCreateConnectorStatement) commands.get(0)).getProperties().get("connector.class"), is("io.confluent.connect.jdbc.JdbcSourceConnector"));

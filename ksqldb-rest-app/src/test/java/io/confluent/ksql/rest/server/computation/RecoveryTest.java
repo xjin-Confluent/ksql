@@ -48,6 +48,7 @@ import io.confluent.ksql.rest.EndpointResponse;
 import io.confluent.ksql.rest.Errors;
 import io.confluent.ksql.rest.entity.CommandId;
 import io.confluent.ksql.rest.entity.KsqlRequest;
+import io.confluent.ksql.rest.server.execution.DefaultConnectServerErrors;
 import io.confluent.ksql.rest.server.resources.KsqlResource;
 import io.confluent.ksql.rest.server.state.ServerState;
 import io.confluent.ksql.rest.util.ClusterTerminator;
@@ -72,12 +73,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.streams.StreamsConfig;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
 import org.hamcrest.TypeSafeDiagnosingMatcher;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mock;
 
@@ -128,7 +131,9 @@ public class RecoveryTest {
         new MetaStoreImpl(new InternalFunctionRegistry()),
         ignored -> engineMetrics,
         queryIdGenerator,
-        ksqlConfig);
+        ksqlConfig,
+        new MetricCollectors()
+    );
   }
 
   private static class FakeCommandQueue implements CommandQueue {
@@ -228,7 +233,6 @@ public class RecoveryTest {
           queryIdGenerator
       );
 
-      MetricCollectors.initialize();
       this.commandRunner = new CommandRunner(
           statementExecutor,
           fakeCommandQueue,
@@ -241,7 +245,8 @@ public class RecoveryTest {
           InternalTopicSerdes.deserializer(Command.class),
           errorHandler,
           topicClient,
-          "command_topic"
+          "command_topic",
+          new Metrics()
       );
 
       this.ksqlResource = new KsqlResource(
@@ -251,6 +256,7 @@ public class RecoveryTest {
           ()->{},
           Optional.of((sc, metastore, statement) -> { }),
           errorHandler,
+          new DefaultConnectServerErrors(),
           denyListPropertyValidator
       );
 
@@ -477,7 +483,7 @@ public class RecoveryTest {
   private static class PersistentQueryMetadataMatcher
       extends TypeSafeDiagnosingMatcher<PersistentQueryMetadata> {
     private final Matcher<Set<SourceName>> sourcesNamesMatcher;
-    private final Matcher<SourceName> sinkNamesMatcher;
+    private final Matcher<Optional<SourceName>> sinkNamesMatcher;
     private final Matcher<LogicalSchema> resultSchemaMatcher;
     private final Matcher<String> sqlMatcher;
     private final Matcher<String> stateMatcher;
@@ -585,6 +591,7 @@ public class RecoveryTest {
   @Before
   public void setUp() {
     topicClient.preconditionTopicExists("A");
+    topicClient.preconditionTopicExists("B");
     topicClient.preconditionTopicExists("command_topic");
   }
 
@@ -598,6 +605,15 @@ public class RecoveryTest {
   }
 
   @Test
+  public void shouldRecoverCreatesWithNonExistingTopic() {
+    server1.submitCommands(
+        "CREATE STREAM A (COLUMN STRING) WITH (KAFKA_TOPIC='newTopic', VALUE_FORMAT='JSON', PARTITIONS=1);",
+        "CREATE STREAM B AS SELECT * FROM A;"
+    );
+    shouldRecover(commands);
+  }
+  @Test
+
   public void shouldRecoverRecreates() {
     server1.submitCommands(
         "CREATE STREAM A (ROWKEY STRING KEY, C1 STRING, C2 INT) WITH (KAFKA_TOPIC='A', VALUE_FORMAT='JSON');",
@@ -632,12 +648,11 @@ public class RecoveryTest {
     shouldRecover(commands);
   }
 
-
   @Test
   public void shouldRecoverInsertIntos() {
     server1.submitCommands(
         "CREATE STREAM A (COLUMN STRING) WITH (KAFKA_TOPIC='A', VALUE_FORMAT='JSON');",
-        "CREATE STREAM B (COLUMN STRING) WITH (KAFKA_TOPIC='B', VALUE_FORMAT='JSON', PARTITIONS=1);",
+        "CREATE STREAM B (COLUMN STRING) WITH (KAFKA_TOPIC='B', VALUE_FORMAT='JSON');",
         "INSERT INTO B SELECT * FROM A;"
     );
     shouldRecover(commands);
@@ -647,7 +662,7 @@ public class RecoveryTest {
   public void shouldRecoverInsertIntosWithCustomQueryId() {
     server1.submitCommands(
         "CREATE STREAM A (COLUMN STRING) WITH (KAFKA_TOPIC='A', VALUE_FORMAT='JSON');",
-        "CREATE STREAM B (COLUMN STRING) WITH (KAFKA_TOPIC='B', VALUE_FORMAT='JSON', PARTITIONS=1);",
+        "CREATE STREAM B (COLUMN STRING) WITH (KAFKA_TOPIC='B', VALUE_FORMAT='JSON');",
         "INSERT INTO B WITH(QUERY_ID='MY_INSERT_ID') SELECT * FROM A;"
     );
     shouldRecover(commands);
@@ -657,10 +672,20 @@ public class RecoveryTest {
   public void shouldRecoverInsertIntosRecreates() {
     server1.submitCommands(
         "CREATE STREAM A (COLUMN STRING) WITH (KAFKA_TOPIC='A', VALUE_FORMAT='JSON');",
-        "CREATE STREAM B (COLUMN STRING) WITH (KAFKA_TOPIC='B', VALUE_FORMAT='JSON', PARTITIONS=1);",
+        "CREATE STREAM B (COLUMN STRING) WITH (KAFKA_TOPIC='B', VALUE_FORMAT='JSON');",
         "INSERT INTO B SELECT * FROM A;",
         "TERMINATE InsertQuery_2;",
         "INSERT INTO B SELECT * FROM A;"
+    );
+    shouldRecover(commands);
+  }
+
+  @Test
+  public void shouldRecoverIfNotExists() {
+    server1.submitCommands(
+        "CREATE STREAM A (COLUMN STRING) WITH (KAFKA_TOPIC='A', VALUE_FORMAT='JSON');",
+        "CREATE STREAM IF NOT EXISTS B AS SELECT * FROM A;",
+        "CREATE STREAM IF NOT EXISTS B AS SELECT * FROM A;"
     );
     shouldRecover(commands);
   }

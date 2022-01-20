@@ -30,12 +30,14 @@ import io.confluent.ksql.execution.streams.materialization.Materialization;
 import io.confluent.ksql.execution.streams.materialization.MaterializedWindowedTable;
 import io.confluent.ksql.execution.streams.materialization.WindowedRow;
 import io.confluent.ksql.execution.streams.materialization.ks.KsLocator;
+import io.confluent.ksql.execution.streams.materialization.ks.KsMaterializedQueryResult;
+import io.confluent.ksql.physical.common.QueryRow;
 import io.confluent.ksql.planner.plan.DataSourceNode;
-import io.confluent.ksql.planner.plan.KeyConstraint.KeyConstraintKey;
+import io.confluent.ksql.planner.plan.KeyConstraint;
 import io.confluent.ksql.planner.plan.QueryFilterNode.WindowBounds;
+import io.confluent.ksql.util.IteratorUtil;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import org.junit.Before;
@@ -58,13 +60,13 @@ public class KeyedWindowedTableLookupOperatorTest {
   @Mock
   private DataSourceNode logicalNode;
   @Mock
-  private KeyConstraintKey KEY1;
+  private KeyConstraint KEY1;
   @Mock
-  private KeyConstraintKey KEY2;
+  private KeyConstraint KEY2;
   @Mock
-  private KeyConstraintKey KEY3;
+  private KeyConstraint KEY3;
   @Mock
-  private KeyConstraintKey KEY4;
+  private KeyConstraint KEY4;
   @Mock
   private GenericKey GKEY1;
   @Mock
@@ -108,6 +110,10 @@ public class KeyedWindowedTableLookupOperatorTest {
     when(KEY4.getWindowBounds()).thenReturn(Optional.of(windowBounds1));
     when(windowBounds1.getMergedStart()).thenReturn(WINDOW_START_BOUNDS);
     when(windowBounds1.getMergedEnd()).thenReturn(WINDOW_END_BOUNDS);
+    when(WINDOWED_ROW1.key()).thenReturn(GKEY1);
+    when(WINDOWED_ROW2.key()).thenReturn(GKEY2);
+    when(WINDOWED_ROW3.key()).thenReturn(GKEY3);
+    when(WINDOWED_ROW4.key()).thenReturn(GKEY4);
   }
 
   @Test
@@ -127,22 +133,26 @@ public class KeyedWindowedTableLookupOperatorTest {
         materialization, logicalNode);
     when(materialization.windowed()).thenReturn(windowedTable);
     when(materialization.windowed().get(GKEY1, 1, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW1, WINDOWED_ROW2));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW1, WINDOWED_ROW2)));
     when(materialization.windowed().get(GKEY2, 2, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(Collections.emptyList());
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of()));
     when(materialization.windowed().get(GKEY3, 3, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW3));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW3)));
     when(materialization.windowed().get(GKEY4, 3, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW2, WINDOWED_ROW4));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW2, WINDOWED_ROW4)));
     lookupOperator.setPartitionLocations(singleKeyPartitionLocations);
     lookupOperator.open();
 
     //Then:
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW1));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW2));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW3));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW2));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW4));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY1));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY2));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY3));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY2));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY4));
     assertThat(lookupOperator.next(), is(nullValue()));
     assertThat(lookupOperator.getReturnedRowCount(), is(5L));
   }
@@ -162,22 +172,25 @@ public class KeyedWindowedTableLookupOperatorTest {
     when(windowBounds1.getMergedEnd()).thenReturn(WINDOW_END_BOUNDS);
     when(materialization.windowed()).thenReturn(windowedTable);
     when(materialization.windowed().get(GKEY1, 1, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW1, WINDOWED_ROW2));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW1, WINDOWED_ROW2)));
     when(materialization.windowed().get(GKEY2, 1, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(Collections.emptyList());
+        .thenReturn(KsMaterializedQueryResult.rowIterator(IteratorUtil.of()));
     when(materialization.windowed().get(GKEY3, 3, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW3));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW3)));
     when(materialization.windowed().get(GKEY4, 3, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW2, WINDOWED_ROW4));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW2, WINDOWED_ROW4)));
     lookupOperator.setPartitionLocations(multipleKeysPartitionLocations);
     lookupOperator.open();
 
     //Then:
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW1));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW2));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW3));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW2));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW4));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY1));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY2));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY3));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY2));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY4));
     assertThat(lookupOperator.next(), is(nullValue()));
     assertThat(lookupOperator.getReturnedRowCount(), is(5L));
   }
@@ -211,22 +224,24 @@ public class KeyedWindowedTableLookupOperatorTest {
     when(windowBounds4.getMergedEnd()).thenReturn(Range.all());
     when(materialization.windowed()).thenReturn(windowedTable);
     when(materialization.windowed().get(GKEY1, 1, WINDOW_START_BOUNDS, WINDOW_END_BOUNDS))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW1, WINDOWED_ROW2));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW1, WINDOWED_ROW2)));
     when(materialization.windowed().get(GKEY2, 2, Range.all(), WINDOW_END_BOUNDS))
-        .thenReturn(Collections.emptyList());
+        .thenReturn(KsMaterializedQueryResult.rowIterator(IteratorUtil.of()));
     when(materialization.windowed().get(GKEY3, 3, WINDOW_START_BOUNDS, Range.all()))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW3));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(IteratorUtil.of(WINDOWED_ROW3)));
     when(materialization.windowed().get(GKEY4, 3, Range.all(), Range.all()))
-        .thenReturn(ImmutableList.of(WINDOWED_ROW2, WINDOWED_ROW4));
+        .thenReturn(KsMaterializedQueryResult.rowIterator(
+            IteratorUtil.of(WINDOWED_ROW2, WINDOWED_ROW4)));
     lookupOperator.setPartitionLocations(singleKeyPartitionLocations);
     lookupOperator.open();
 
     //Then:
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW1));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW2));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW3));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW2));
-    assertThat(lookupOperator.next(), is(WINDOWED_ROW4));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY1));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY2));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY3));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY2));
+    assertThat(((QueryRow) lookupOperator.next()).key(), is(GKEY4));
     assertThat(lookupOperator.next(), is(nullValue()));
     assertThat(lookupOperator.getReturnedRowCount(), is(5L));
   }

@@ -14,16 +14,13 @@ keywords: ksqldb, sql, syntax, data type
 
 ## Character types
 
-| name                | description                | backing Java type
-|---------------------|----------------------------|------------------
-| `varchar`, `string` | variable-length string     | [`java.lang.String`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/lang/String.html)
-| `bytes`             | variable-length byte array | [byte []](https://docs.oracle.com/javase/8/docs/api/java/lang/Byte.html)
+| name                | description            | backing Java type
+|---------------------|------------------------|------------------
+| `varchar`, `string` | variable-length string | [`java.lang.String`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/lang/String.html)
 
 The `varchar` type represents a string in UTF-16 format.
 
 Comparisons between `varchar` instances don't account for locale.
-
-The `bytes` type represents an array of raw bytes.
 
 ## Numeric types
 
@@ -154,7 +151,7 @@ Access the fields of a struct by using the `->` operator. For example,
 `SOME_STRUCT->ID` retrieves the value of the struct's `ID` field. For
 more information, see [Operators](/developer-guide/ksqldb-reference/operators).
 
-You can define a structs within a `CREATE TABLE` or `CREATE STREAM`
+You can define structs within a `CREATE TABLE` or `CREATE STREAM`
 statement by using the syntax `STRUCT<FieldName FieldType, ...>`. For
 example, `STRUCT<ID BIGINT, NAME STRING, AGE INT>` defines a struct with
 three fields, with the supplied name and type.
@@ -171,7 +168,7 @@ SELECT STRUCT(f1 := v1, f2 := v2) FROM s1 EMIT CHANGES;
 `MAP<KeyType, ValueType>`
 
 ksqlDB supports fields that are maps. A map has a key and value type. All
-of the keys must be of the same type, and all of the values must be also
+of the keys must be of the same type, and all of the values must also
 be of the same type. Currently only `STRING` keys are supported. The
 value type can be any valid SQL type.
 

@@ -105,6 +105,12 @@ public class QueryAnonymizerTest {
   }
 
   @Test
+  public void shouldAnonymizeAlterSystemProperty() {
+    Assert.assertEquals("ALTER SYSTEM 'ksql.persistent.prefix'='[string]';",
+        anon.anonymize("ALTER SYSTEM 'ksql.persistent.prefix'='test';"));
+  }
+
+  @Test
   public void shouldAnonymizeDefineUndefineProperty() {
     Assert.assertEquals("DEFINE variable='[string]';",
         anon.anonymize("DEFINE format = 'JSON';"));
@@ -161,6 +167,15 @@ public class QueryAnonymizerTest {
   }
 
   @Test
+  public void shouldAnonymizeCreateSourceStreamQueryCorrectly() {
+    final String output = anon.anonymize(
+        "CREATE SOURCE STREAM my_stream (profileId VARCHAR, latitude DOUBLE, longitude DOUBLE)\n"
+            + "WITH (kafka_topic='locations', value_format='json');");
+
+    Approvals.verify(output);
+  }
+
+  @Test
   public void shouldAnonymizeCreateStreamAsQueryCorrectly() {
     final String output = anon.anonymize(
         "CREATE STREAM my_stream AS SELECT user_id, browser_cookie, ip_address\n"
@@ -177,6 +192,15 @@ public class QueryAnonymizerTest {
     final String output = anon.anonymize(
         "CREATE TABLE my_table (profileId VARCHAR, latitude DOUBLE, longitude DOUBLE)\n"
             + "WITH (kafka_topic='locations', value_format='json', partitions=1);");
+
+    Approvals.verify(output);
+  }
+
+  @Test
+  public void shouldAnonymizeCreateSourceTableCorrectly() {
+    final String output = anon.anonymize(
+        "CREATE SOURCE TABLE my_table (profileId VARCHAR, latitude DOUBLE, longitude DOUBLE)\n"
+            + "WITH (kafka_topic='locations', value_format='json');");
 
     Approvals.verify(output);
   }

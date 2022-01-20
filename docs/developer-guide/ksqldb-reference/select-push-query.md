@@ -36,11 +36,13 @@ Push queries enable you to subscribe to changes, which enable
 reacting to new information in real-time. They’re a good fit for asynchronous
 application flows. For request/response flows, see [Pull Queries](select-pull-query.md).
 
+!!! Tip "See push queries in action"
+    - [Detect Unusual Credit Card Activity](https://confluentinc.github.io/ksqldb-recipes/anomaly-detection/credit-card-activity/)
+    - [How to Efficiently Subscribe to a SQL Query for Changes](https://www.confluent.io/blog/push-queries-v2-with-ksqldb-scalable-sql-query-subscriptions/)
+
 Push queries can use all available SQL features, which can be useful when prototyping a
 persistent query or when running ad-hoc queries from the CLI. But unlike persistent queries,
-
 push queries are not shared. If multiple clients submit the same push query, ksqlDB computes
-
 independent results for each client.
 
 !!! tip
@@ -54,8 +56,8 @@ In the previous statements, `from_item` is one of the following:
 -   `from_item LEFT JOIN from_item ON join_condition`
 
 The WHERE clause can refer to any column defined for a stream or table,
-including the `ROWTIME` pseudo column. `where_condition` is an expression that evaluates to true
-for each record selected.
+including the `ROWTIME`, `ROWPARTITION`, and `ROWOFFSET` pseudo columns.
+`where_condition` is an expression that evaluates to true for each record selected.
 
 In the WHERE expression, you can use any operator that ksqlDB supports.
 For more information, see

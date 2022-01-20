@@ -9,7 +9,7 @@ keywords: ksqlDB, create, table
 ## Synopsis
 
 ```sql
-CREATE [OR REPLACE] TABLE [IF NOT EXISTS] table_name ( { column_name data_type [PRIMARY KEY] } [, ...] )
+CREATE [OR REPLACE] [SOURCE] TABLE [IF NOT EXISTS] table_name ( { column_name data_type [PRIMARY KEY] } [, ...] )
   WITH ( property_name = expression [, ...] );
 ```
 
@@ -20,6 +20,19 @@ Create a new table with the specified columns and properties.
 If the IF NOT EXISTS clause is present, the statement won't fail if a
 table with the same name already exists.
 
+### Source tables
+
+If the SOURCE clause is present, you can execute pull queries on it. The SOURCE
+clause executes an internal query for the table to create a materialized state that's
+used by pull queries. You can't terminate this query manually. You can terminate it only
+by dropping the table with the DROP TABLE statement.
+
+Also, when you provide the SOURCE clause, the table is created as read-only. For a read-only table,
+INSERT statements and the DELETE TOPIC on DROP TABLE statements aren't permitted.
+
+To disable the SOURCE table feature, set `ksql.source.table.materialization.enabled` to
+`false` in your ksqlDB server properties file.
+
 ### Partitioning
 
 Assign the PARTITIONS property in the WITH clause to specify the number of
@@ -29,19 +42,30 @@ information, see [Parallelization](/operate-and-deploy/performance-guidelines/#p
 
 ### PRIMARY KEY
 
-A ksqlDB TABLE works much like tables in other SQL systems. A table has zero or more rows. Each
-row is identified by its `PRIMARY KEY`. A row's `PRIMARY KEY` can not be `NULL`. A message in the
-underlying Kafka topic with the same key as an existing row will _replace_ the existing row in the
-table, or _delete_ the row if the message's value is `NULL`, i.e. a _tombstone_, as long as it has
-a later timestamp / `ROWTIME`.
+A ksqlDB table works much like tables in other SQL systems. A table has zero or
+more rows. Each row is identified by its `PRIMARY KEY`. A row's `PRIMARY KEY`
+can't be `NULL`.
 
-This situation is handled differently by [ksqlDB STREAM](../create-stream), as shown in the following table.
+!!! important
+    You must declare a PRIMARY KEY when you create a table on a {{ site.ak }}
+    topic.
+
+If an incoming message in the underlying {{ site.ak }} topic has the same key
+as an existing row, it _replaces_ the existing row in the table. But if the
+message's value is `null`, it _deletes_ the row.
+
+!!! tip
+    A message that has a `null` value is known as a _tombstone_, because it
+    causes the existing row to be deleted.
+
+This situation is handled differently by [ksqlDB STREAM](../create-stream), as
+shown in the following table.
 
 |                          |  STREAM                                                       | TABLE                                                             |
 | ------------------------ | --------------------------------------------------------------| ----------------------------------------------------------------- |
 | Key column type          | `KEY`                                                         | `PRIMARY KEY`                                                     |
 | NON NULL key constraint  | No                                                            | Yes <br> Messages in the {{ site.ak }} topic with a NULL `PRIMARY KEY` are ignored. |
-| Unique key constraint    | No <br> Messages with the same key as another have no special meaning. | Yes <br> Later messages with the same key _replace_ earlier. |
+| Unique key constraint    | No <br> Messages with the same key as another have no special meaning. | Yes <br> Later messages with the same key _replace_ earlier ones. |
 | Tombstones               | No <br> Messages with NULL values are ignored.                | Yes <br> NULL message values are treated as a _tombstone_ <br> Any existing row with a matching key is deleted. |
 
 Each column is defined by:
@@ -54,8 +78,14 @@ Each column is defined by:
 * `data_type`: the SQL type of the column. Columns can be any of the
    [data types](/reference/sql/data-types) supported by ksqlDB.
 
+* `HEADERS` or `HEADER('<key>')`: columns that are populated by the Kafka message's header should be
+   marked as `HEADERS` or `HEADER('<key>')` columns. If a column is marked by `HEADERS`, it contains
+
+   the full list of header keys and values. If a column is marked by `HEADER('<key>')`, then it will contain
+   the last header that matches the key (or `NULL` if that key is not in the list of headers).
+
 * `PRIMARY KEY`: columns that are stored in the Kafka message's key should be marked as
-   `PRIMARY KEY` columns. If a column is not marked as a `PRIMARY KEY` column ksqlDB loads it
+   `PRIMARY KEY` columns. If a column is unmarked, ksqlDB loads it
    from the {{ site.ak }} message's value. Unlike a stream's `KEY` column, a table's `PRIMARY KEY` column(s)
    are NON NULL. Any records in the Kafka topic with NULL key columns are dropped.
 
@@ -65,12 +95,14 @@ For supported [serialization formats](/reference/serialization),
 ksqlDB can integrate with [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html).
 ksqlDB can use [Schema Inference](/operate-and-deploy/schema-registry-integration/#schema-inference) to
 spare you from defining columns manually in your `CREATE TABLE` statements.
+ksqlDB can also use [Schema Inference With ID](/operate-and-deploy/schema-inference-with-id) to define
+columns automatically and enable you using a physical schema for data serialization.
 
 !!! note
-    - To use Avro, Protobuf, or JSON_SR you must have {{ site.sr }} enabled and
-      `ksql.schema.registry.url` must be set in the ksqlDB server configuration
-      file. For more information, see
-      [Configure ksqlDB for Avro, Protobuf, and JSON schemas](../../operate-and-deploy/installation/server-config/avro-schema.md).
+    
+    - To use Avro or Protobuf, you must have {{ site.sr }} enabled and
+      `ksql.schema.registry.url` must be set in the ksqlDB Server configuration file.
+      See [Configure ksqlDB for Avro, Protobuf, and JSON schemas](../../operate-and-deploy/installation/server-config/avro-schema.md). 
     - Avro and Protobuf field names are not case sensitive in ksqlDB.
       This matches the ksqlDB column name behavior.
 
@@ -78,11 +110,20 @@ spare you from defining columns manually in your `CREATE TABLE` statements.
 
 Each row within the table has a `ROWTIME` pseudo column, which represents the _last modified time_ 
 of the row. The timestamp has milliseconds accuracy. The timestamp is used by ksqlDB when updating
-a row, during any windowing operations and during joins, where data from each side of a join is 
+a row during any windowing operations and during joins, where data from each side of a join is 
 generally processed in time order.  
 
 By default, `ROWTIME` is populated from the corresponding {{ site.ak }} message timestamp. Set `TIMESTAMP` in
 the `WITH` clause to populate `ROWTIME` from a column in the {{ site.ak }} message key or value.
+
+### ROWPARTITION and ROWOFFSET
+
+Like `ROWTIME`, `ROWPARTITION` and `ROWOFFSET` are pseudo columns. They represent the
+partition and offset of the *source* topic. For example, if issuing a push query
+with `ROWPARTITION` or `ROWOFFSET` in the SELECT clause on a stream or table backed
+by topic x, the push query's projection will contain the partition and offset information
+of the underlying records in topic x.
+
 ### Table properties
 
 Specify details about your table by using the WITH clause, which supports the
@@ -92,13 +133,15 @@ following properties:
 | ----------------------- | ------------------------------------------------------------------------------------------------- |
 | KAFKA_TOPIC (required)  | The name of the Kafka topic that backs this source. The topic must either already exist in Kafka, or PARTITIONS must be specified to create the topic. Command will fail if the topic exists with different partition/replica counts. |
 | KEY_FORMAT              | Specifies the serialization format of the message key in the topic. For supported formats, see [Serialization Formats](/reference/serialization).<br>If not supplied, the system default, defined by [ksql.persistence.default.format.key](/reference/server-configuration#ksqlpersistencedefaultformatkey), is used. If the default is also not set the statement will be rejected as invalid. |
+| KEY_SCHEMA_ID           | Specifies the schema ID of key schema in {{ site.sr }}. The schema will be used for schema inference and data serialization. See [Schema Inference With Schema ID](/operate-and-deploy/schema-inference-with-id). |
 | VALUE_FORMAT            | Specifies the serialization format of the message value in the topic. For supported formats, see [Serialization Formats](/reference/serialization).<br>If not supplied, the system default, defined by [ksql.persistence.default.format.value](/reference/server-configuration#ksqlpersistencedefaultformatvalue), is used. If the default is also not set the statement will be rejected as invalid. |
+| VALUE_SCHEMA_ID         | Specifies the schema ID of value schema in {{ site.sr }}. The schema will be used for schema inference and data serialization. See [Schema Inference With Schema ID](/operate-and-deploy/schema-inference-with-id). |
 | FORMAT                  | Specifies the serialization format of both the message key and value in the topic. It is not valid to supply this property alongside either `KEY_FORMAT` or `VALUE_FORMAT`. For supported formats, see [Serialization Formats](/reference/serialization). |
 | PARTITIONS              | The number of partitions in the backing topic. This property must be set if creating a TABLE without an existing topic (the command will fail if the topic does not exist). You can't change the number of partitions on a table. To change the partition count, you must drop the table and create it again. |
 | REPLICAS                | The number of replicas in the backing topic. If this property is not set but PARTITIONS is set, then the default Kafka cluster configuration for replicas will be used for creating a new topic. |
 | VALUE_DELIMITER         | Used when VALUE_FORMAT='DELIMITED'. Supports single character to be a delimiter, defaults to ','. For space and tab delimited values you must use the special values 'SPACE' or 'TAB', not an actual space or tab character. |
 | TIMESTAMP               | By default, the pseudo `ROWTIME` column is the timestamp of the message in the Kafka topic. The TIMESTAMP property can be used to override `ROWTIME` with the contents of the specified column within the Kafka message (similar to timestamp extractors in Kafka's Streams API). Timestamps have a millisecond accuracy. Time-based operations, such as windowing, will process a record according to the timestamp in `ROWTIME`. |
-| TIMESTAMP_FORMAT        | Used in conjunction with TIMESTAMP. If not set the timestamp column must be of type `bigint`. If it is set, then the TIMESTAMP column must be of type `varchar` and have a format that can be parsed with the java `DateTimeFormatter`. If your timestamp format has characters requiring single quotes, you can escape them with successive single quotes, `''`, for example: `'yyyy-MM-dd''T''HH:mm:ssX'`. For more information on timestamp formats, see [DateTimeFormatter](https://cnfl.io/java-dtf).                                       |
+| TIMESTAMP_FORMAT        | Used in conjunction with TIMESTAMP. If not set, ksqlDB timestamp column must be of type `bigint` or `timestamp`. If it is set, then the TIMESTAMP column must be of type `varchar` and have a format that can be parsed with the java `DateTimeFormatter`. If your timestamp format has characters requiring single quotes, you can escape them with successive single quotes, `''`, for example: `'yyyy-MM-dd''T''HH:mm:ssX'`. For more information on timestamp formats, see [DateTimeFormatter](https://cnfl.io/java-dtf).                                       |
 | WRAP_SINGLE_VALUE       | Controls how values are deserialized where the values schema contains only a single column. The setting controls how ksqlDB will deserialize the value of the records in the supplied `KAFKA_TOPIC` that contain only a single column.<br>If set to `true`, ksqlDB expects the column to have been serialized as named column within a record.<br>If set to `false`, ksqlDB expects the column to have been serialized as an anonymous value.<br>If not supplied, the system default, defined by [ksql.persistence.wrap.single.values](/reference/server-configuration#ksqlpersistencewrapsinglevalues), then the format's default is used.<br>**Note:** `null` values have special meaning in ksqlDB. Care should be taken when dealing with single-column schemas where the value can be `null`. For more information, see [Single column (un)wrapping](/reference/serialization#single-field-unwrapping).<br>**Note:** Supplying this property for formats that do not support wrapping, for example `DELIMITED`, or when the value schema has multiple columns, will result in an error. |
 | WINDOW_TYPE             | By default, the topic is assumed to contain non-windowed data. If the data is windowed, i.e. was created using ksqlDB using a query that contains a `WINDOW` clause, then the `WINDOW_TYPE` property can be used to provide the window type. Valid values are `SESSION`, `HOPPING`, and `TUMBLING`. |
 | WINDOW_SIZE             | By default, the topic is assumed to contain non-windowed data. If the data is windowed, i.e., was created using ksqlDB using a query that contains a `WINDOW` clause, and the `WINDOW_TYPE` property is TUMBLING or HOPPING, then the WINDOW_SIZE property should be set. The property is a string with two literals, window size (a number) and window size unit (a time unit). For example: `10 SECONDS`. |
@@ -125,6 +168,31 @@ CREATE TABLE users (
      id BIGINT PRIMARY KEY
    ) WITH (
      KAFKA_TOPIC = 'my-users-topic', 
+     VALUE_FORMAT = 'JSON_SR'
+   );
+```
+
+```sql
+-- table with value columns loaded from Schema Registry with VALUE_SCHEMA_ID: 
+CREATE TABLE users (
+     id BIGINT PRIMARY KEY
+   ) WITH (
+     KAFKA_TOPIC = 'my-users-topic', 
+     VALUE_FORMAT = 'JSON_SR',
+     VALUE_SCHEMA_ID =2
+   );
+```
+
+```sql
+-- table with key columns loaded from Schema Registry with KEY_SCHEMA_ID: 
+CREATE TABLE users (
+     usertimestamp BIGINT,
+     gender VARCHAR,
+     region_id VARCHAR
+   ) WITH (
+     KAFKA_TOPIC = 'my-users-topic', 
+     KEY_FORMAT = 'AVRO',
+     KEY_SCHEMA_ID = 1,
      VALUE_FORMAT = 'JSON_SR'
    );
 ```

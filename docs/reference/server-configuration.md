@@ -13,6 +13,7 @@ Many parameters can only be set once for the entire server, and must be
 specified using the `ksql-server.properties` file. Some parameters, however,
 can be set on a per-persistent query basis using `SET`. This is indicated in each parameter
 section below.
+Retrieve the current list of configuration settings by using the [SHOW PROPERTIES](/developer-guide/ksqldb-reference/show-properties/) command.
 
 For more information on setting properties, see
 [Configure ksqlDB Server](/operate-and-deploy/installation/server-config).
@@ -39,6 +40,16 @@ For more information on setting properties, see
     `ksql.streams.consumer.xxx` to pass the property through. For example,
     `ksql.streams.producer.compression.type` sets the compression type on the producer.
 
+## `compression.type`
+
+Sets the compression type used by {{ site.ak }} producers, like the
+INSERT VALUES statement. The default is `snappy`.
+
+This setting is distinct from the
+`ksql.streams.producer.compression.type` config, which sets the type of 
+compression used by streams producers for topics created by CREATE TABLE AS
+SELECT, CREATE STREAM AS SELECT, and INSERT INTO statements.
+
 ## `ksql.advertised.listener`
 
 This is the URL used for inter-node communication.  Unlike `listeners` or `ksql.internal.listener`,
@@ -52,17 +63,7 @@ If `ksql.internal.listener` resolves to a URL that uses `localhost`, a wildcard 
 like `0.0.0.0`, or a hostname that other ksqlDB nodes either can't resolve or can't route requests
 to, set `ksql.advertised.listener` to a URL that ksqlDB nodes can resolve.
 
-For more information, see [Configuring Listeners of a ksqlDB Cluster](./index.md#configuring-listeners-of-a-ksqldb-cluster)
-
-## `ksql.compression.type`
-
-Sets the compression type used by {{ site.ak }} producers, like the
-INSERT VALUES statement. The default is `snappy`.
-
-This setting is distinct from the
-`ksql.streams.producer.compression.type` config, which sets the type of 
-compression used by streams producers for topics created by CREATE TABLE AS
-SELECT, CREATE STREAM AS SELECT, and INSERT INTO statements.
+For more information, see [Configuring Listeners of a ksqlDB Cluster](/operate-and-deploy/installation/server-config/#configuring-listeners-of-a-ksqldb-cluster)
 
 ## `ksql.connect.url`
 
@@ -84,7 +85,7 @@ is the `ext` directory relative to ksqlDB's current working directory.
 
 ## `ksql.fail.on.deserialization.error`
 
-**Per query:** yes
+**Per query:** no
 
 Indicates whether to fail if corrupt messages are read. ksqlDB decodes
 messages at runtime when reading from a Kafka topic. The decoding that
@@ -102,7 +103,7 @@ add the following setting to your ksqlDB Server properties file:
 
 ## `ksql.fail.on.production.error`
 
-**Per query:** yes
+**Per query:** no
 
 Indicates whether to fail if ksqlDB fails to publish a record to an output
 topic due to a {{ site.ak }} producer exception. The default value in ksqlDB is
@@ -131,14 +132,14 @@ is explored in detail [here](/how-to-guides/create-a-user-defined-function/).
 Limit the size of the resultant Array to N entries, beyond which
 any further values are silently ignored, by setting this configuration to N.
 
-Also see [aggregate-functions](/reference/aggregate-functions)
+Also see [aggregate-functions](/developer-guide/ksqldb-reference/aggregate-functions/#collect_list)
 
 ## `ksql.functions.collect_set.limit`
 
 Limits the size of the resultant Set to N entries, beyond which
 any further values are silently ignored, by setting this configuration to N.
 
-Also see [aggregate-functions](/reference/aggregate-functions)
+Also see [aggregate-functions](/developer-guide/ksqldb-reference/aggregate-functions/#collect_set)
 
 ## `ksql.functions.substring.legacy.args`
 
@@ -155,6 +156,54 @@ other, to aid in faster failure detection for improved pull query routing.
 Also enables the [`/clusterStatus` endpoint](../developer-guide/ksqldb-rest-api/cluster-status-endpoint.md).
 The default is `false`.
 
+!!! important
+    Be careful when you change heartbeat configuration values, because
+    the stability and availability of ksqlDB applications depend sensitively on them.
+    For example, if you set the value of [`ksql.heartbeat.check.interval.ms`](#ksql.heartbeat.check.interval.ms)
+    too high, it takes longer for nodes to determine the availability of actives and
+    standbys, which may cause pull queries to fail unnecessarily.
+
+## `ksql.heartbeat.send.interval.ms`
+
+If heartbeats are enabled, this config controls the interval, in milliseconds, at which 
+heartbeats are sent between nodes. The default value is `100`.
+
+If you tune this value, also consider tuning
+[`ksql.heartbeat.check.interval.ms`](#ksqlheartbeatcheckintervalms), 
+which controls how often a node processes received heartbeats, and
+[`ksql.heartbeat.window.ms`](#ksqlheartbeatwindowms),
+which controls the window size for checking if heartbeats were missed 
+and deciding whether a node is up or down.
+
+## `ksql.heartbeat.check.interval.ms`
+
+If heartbeats are enabled, this config controls the interval, in milliseconds,
+at which a ksqlDB node processes its received heartbeats to determine whether
+other nodes in the cluster are down. The default value is `200`. 
+
+## `ksql.heartbeat.window.ms`
+
+If heartbeats are enabled, this config controls the size of the window,
+in milliseconds, at which heartbeats are processed to determine how many
+have been missed. The default value is `2000`.
+
+## `ksql.heartbeat.missed.threshold.ms`
+
+If heartbeats are enabled, this config determines how many consecutive missed
+heartbeats flag a ksqlDB node as down. The default value is `3`. 
+
+## `ksql.heartbeat.discover.interval.ms`
+
+If heartbeats are enabled, this config controls the interval, in milliseconds,
+at which a ksqlDB node checks for changes in the cluster, like newly added nodes. 
+The default value is `2000`.
+
+## `ksql.heartbeat.thread.pool.size`
+
+If heartbeats are enabled, this config controls the size of the thread pool
+used for processing and sending heartbeats as well as determining changes in
+the cluster. The default value is `3`. 
+
 ## `ksql.internal.listener`
 
 The `ksql.internal.listener` setting controls the address bound for use by internal,
@@ -162,7 +211,7 @@ intra-cluster communication.
 
 If not set, the internal listener defaults to the first listener defined by `listeners`.
 
-This setting is most often useful in a IaaS environment to separate external-facing
+This setting is most often useful in an IaaS environment to separate external-facing
 traffic from internal traffic.
 
 ## `ksql.internal.topic.replicas`
@@ -176,7 +225,7 @@ configured separately. For more information, see
 
 ## `ksql.lag.reporting.enable`
 
-If enabled, ksqlDB servers in the same ksqlDB cluster sends state-store 
+If enabled, ksqlDB servers in the same ksqlDB cluster send state-store 
 lag information to each other as a form of heartbeat, for improved pull query routing.
 Only applicable if [`ksql.heartbeat.enable`](#ksqlheartbeatenable) is also set to `true`.
 The default is `false`.
@@ -205,13 +254,13 @@ the [ksql.service.id](#ksqlserviceid) property.
 ## `ksql.logging.processing.topic.partitions`
 
 If automatic processing log topic creation is enabled, ksqlDB creates the
-topic with number of partitions set to the value of this property. By
+topic with the number of partitions set to the value of this property. By
 default, this property has the value `1`.
 
 ## `ksql.logging.processing.topic.replication.factor`
 
 If automatic processing log topic creation is enabled, ksqlDB creates the
-topic with number of replicas set to the value of this property. By
+topic with the number of replicas set to the value of this property. By
 default, this property has the value `1`.
 
 ## `ksql.logging.processing.stream.auto.create`
@@ -415,7 +464,7 @@ Specifies the server properties that ksqlDB clients and users can't override.
 
 The {{ site.sr }} URL path to connect ksqlDB to. To communicate with {{ site.sr }}
 over a secure connection, see
-[Configure ksqlDB for Secured {{ site.srlong }}](/operate-and-deploy/installation/server-config/security#configure-ksqldb-for-https).
+[Configure ksqlDB for Secured {{ site.srlong }}](/operate-and-deploy/installation/server-config/security#configure-ksqldb-for-secured-confluent-schema-registry).
 
 ## `ksql.service.id`
 
@@ -442,6 +491,21 @@ becomes `_confluent-ksql-default__command_topic`).
     By convention, the `ksql.service.id` property should end with a
     separator character of some form, like a dash or underscore, as
     this makes the internal topic names easier to read.
+
+## `ksql.source.table.materialization.enabled`
+
+Controls whether the SOURCE table feature is enabled. If you specify the SOURCE
+clause when you create a table, you can execute pull queries against the table.
+For more information, see
+[SOURCE Tables](/developer-guide/ksqldb-reference/create-table/#source-tables).
+
+## `ksql.headers.columns.enabled`
+
+Controls whether creating new streams/tables with `HEADERS` or `HEADER('<key>')`
+columns is allowed. If you specify a `HEADERS` or `HEADER('<key>')` column when
+you create a stream or table and `ksql.headers.columns.enabled` is set to false,
+then the statement is rejected. Existing sources with `HEADER`columns can be
+queried though.
 
 ## `ksql.streams.auto.offset.reset`
 
@@ -485,7 +549,7 @@ SET 'commit.interval.ms'='5000';
 ```
 
 For more information, see the
-[Streams parameter reference](https://docs.confluent.io/current/streams/developer-guide/config-streams.html#optional-configuration-parameters)
+[Streams parameter reference](https://docs.confluent.io/platform/current/streams/developer-guide/config-streams.html#optional-configuration-parameters)
 and 
 [COMMIT_INTERVAL_MS_CONFIG](https://docs.confluent.io/{{ site.ksqldbversion }}/streams/javadocs/org/apache/kafka/streams/StreamsConfig.html#COMMIT_INTERVAL_MS_CONFIG),
 
@@ -500,9 +564,18 @@ SET 'cache.max.bytes.buffering'='20000000';
 ```
 
 For more information, see the
-[Streams parameter reference](https://docs.confluent.io/current/streams/developer-guide/config-streams.html#optional-configuration-parameters)
+[Streams parameter reference](https://docs.confluent.io/platform/current/streams/developer-guide/config-streams.html#optional-configuration-parameters)
 and
 [CACHE_MAX_BYTES_BUFFERING_CONFIG](https://docs.confluent.io/{{ site.ksqldbversion }}/streams/javadocs/org/apache/kafka/streams/StreamsConfig.html#CACHE_MAX_BYTES_BUFFERING_CONFIG).
+
+## `ksql.streams.num.standby.replicas`
+
+The number of standby replicas. Standby replicas are shadow copies of tables. ksqlDB, through
+{{ site.kstreams }}, attempts to create the specified number of replicas and keep them up to date
+as long as there are enough instances running. Standby replicas are used to minimize the latency of
+failover. A table that was previously hosted on a failed instance is preferred to restart on an
+instance that has standby replicas so that the local state store restoration process from its
+changelog can be minimized.
 
 ## `ksql.streams.num.stream.threads`
 
@@ -540,7 +613,7 @@ joins, to a durable location. By default, state is stored in the
 
 A file that specifies a predefined set of queries for the ksqlDB cluster.
 For an example, see
-[Non-interactive (Headless) ksqlDB Usage](index.md#non-interactive-headless-ksqldb-usage).
+[Non-interactive (Headless) ksqlDB Usage](/operate-and-deploy/installation/server-config/#non-interactive-headless-ksqldb-usage).
 
 ## `ksql.query.persistent.active.limit`
 
@@ -627,6 +700,16 @@ at the limit.
 Sets the maximum number of concurrent pull queries. This limit is enforced per host, not per cluster.
 After hitting the limit, the host will fail pull query requests until it determines that it's no longer
 at the limit.
+
+## `ksql.idle.connection.timeout.seconds`
+
+Sets the timeout for idle connections. A connection is idle if there is no data in either direction
+on that connection for the duration of the timeout. This configuration can be helpful if you are 
+issuing push queries that only receive data infrequently from the server, as otherwise those
+connections will be severed when the timeout (default 10 minutes) is hit.
+
+Decreasing this timeout enables closing connections more aggressively to save server resources.
+Increasing this timeout makes the server more tolerant of low-data volume use cases.
 
 ## `ksql.variable.substitution.enable`
 

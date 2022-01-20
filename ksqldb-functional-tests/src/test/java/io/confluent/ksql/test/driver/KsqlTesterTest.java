@@ -32,6 +32,7 @@ import io.confluent.ksql.format.DefaultFormatInjector;
 import io.confluent.ksql.logging.processing.NoopProcessingLogContext;
 import io.confluent.ksql.metastore.MetaStoreImpl;
 import io.confluent.ksql.metastore.model.DataSource;
+import io.confluent.ksql.metrics.MetricCollectors;
 import io.confluent.ksql.parser.AssertTable;
 import io.confluent.ksql.parser.KsqlParser.ParsedStatement;
 import io.confluent.ksql.parser.KsqlParser.PreparedStatement;
@@ -69,6 +70,7 @@ import io.confluent.ksql.util.PersistentQueryMetadata;
 import io.confluent.ksql.util.QueryMetadata;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
@@ -92,9 +94,12 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RunWith(Parameterized.class)
 public class KsqlTesterTest {
+  private static final Logger LOG = LoggerFactory.getLogger(KsqlTesterTest.class);
 
   private static final String TEST_DIR = "/sql-tests";
 
@@ -106,6 +111,7 @@ public class KsqlTesterTest {
       .put(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, 0)
       .put(StreamsConfig.MAX_TASK_IDLE_MS_CONFIG, 0L)
       .put(KsqlConfig.KSQL_SERVICE_ID_CONFIG, "some.ksql.service.id")
+      .put(KsqlConfig.KSQL_HEADERS_COLUMNS_ENABLED, true)
       .build();
 
   @Rule
@@ -162,6 +168,7 @@ public class KsqlTesterTest {
     this.formatInjector = new DefaultFormatInjector();
 
     final MetaStoreImpl metaStore = new MetaStoreImpl(TestFunctionRegistry.INSTANCE.get());
+    final MetricCollectors metricCollectors = new MetricCollectors();
     this.engine = new KsqlEngine(
         serviceContext,
         NoopProcessingLogContext.INSTANCE,
@@ -179,7 +186,8 @@ public class KsqlTesterTest {
                 closeDriver(driverAndProperties.driver, driverAndProperties.properties, false);
               }
             }
-        )
+        ),
+        metricCollectors
     );
 
     this.expectedException = null;
@@ -261,7 +269,9 @@ public class KsqlTesterTest {
         .map(ds -> new TopicInfo(ds.getKafkaTopicName(), keySerde(ds), valueSerde(ds)))
         .collect(Collectors.toList());
 
-    final DataSource output = engine.getMetaStore().getSource(query.getSinkName());
+    // Sink may be Optional for source tables. Once source table query execution is supported, then
+    // we would need have a condition to not create an output topic info
+    final DataSource output = engine.getMetaStore().getSource(query.getSinkName().get());
     final TopicInfo outputInfo = new TopicInfo(
         output.getKafkaTopicName(),
         keySerde(output),
@@ -288,11 +298,23 @@ public class KsqlTesterTest {
     final File stateDir = tmpFolder.getRoot().toPath().resolve(appId).toFile();
     final File tmp = tmpFolder.getRoot().toPath().resolve("tmp_" + appId).toFile();
 
-    try {
-      if (!deleteState && stateDir.exists()) {
+    if (!deleteState && stateDir.exists()) {
+      try {
         FileUtils.copyDirectory(stateDir, tmp);
+      } catch (final IOException e) {
+        if (!(e instanceof NoSuchFileException)) {
+          throw new KsqlException(e);
+        } else {
+          // Log a warning instead of throwing an exception when the state directory does not
+          // exist. The file could've been deleted manually by external factors.
+          LOG.warn("The state or temp directory '{}' do not exist. "
+                  + "The test will continue closing the driver.",
+              ((NoSuchFileException) e).getFile());
+        }
       }
+    }
 
+    try {
       driver.close();
 
       if (tmp.exists()) {

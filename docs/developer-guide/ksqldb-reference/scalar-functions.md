@@ -40,6 +40,9 @@ CREATE TABLE AGG AS
    GROUP BY ID;
 ```
 
+!!! Tip "See AS_VALUE in action"
+    - [Understand user behavior with clickstream data](https://confluentinc.github.io/ksqldb-recipes/customer-360/clickstream/#ksqldb-code)
+
 ### `CAST`
 
 Since: -
@@ -52,7 +55,7 @@ Converts one type to another. The following casts are supported:
 
 | from | to | notes |
 |------|----|-------|
-| any except `BYTES` | `STRING` | Converts the type to its string representation. |
+| any  | `STRING` | Converts the type to its string representation. |
 | `VARCHAR` | `BOOLEAN` | Any string that exactly matches `true`, case-insensitive, is converted to `true`. Any other value is converted to `false`. |
 | `VARCHAR` | `INT`, `BIGINT`, `DECIMAL`, `DOUBLE` | Converts string representation of numbers to number types. Conversion will fail if text does not contain a number or the number does not fit in the indicated type. |
 | `VARCHAR` | `TIME` | Converts time strings to `TIME`. Conversion fails if text is not in `HH:mm:ss` format.     |
@@ -64,6 +67,10 @@ Converts one type to another. The following casts are supported:
 | `ARRAY` | `ARRAY` | (Since 0.14) Convert between arrays of different element types |   
 | `MAP` | `MAP` | (Since 0.14) Convert between maps of different key and value types |   
 | `STRUCT` | `STRUCT` | (Since 0.14) Convert between structs of different field types. Only fields that exist in the target STRUCT type are copied across. Any fields in the target type that don't exist in the source are set to `NULL`. Field name matching is case-sensitive. |
+
+!!! Tip "See CAST in action"
+    - [Match users for online dating](https://confluentinc.github.io/ksqldb-recipes/customer-360/online-dating/#ksqldb-code)
+    - [Understand user behavior with clickstream data](https://confluentinc.github.io/ksqldb-recipes/customer-360/clickstream/#ksqldb-code)
 
 ### `CEIL`
 
@@ -257,6 +264,9 @@ Given an array, checks if a search value is contained in the array.
 
 Accepts any `ARRAY` type. The type of the second param must match the element type of the `ARRAY`.
 
+!!! Tip "See ARRAY_CONTAINS in action"
+    - [Build Customer Loyalty Programs](https://confluentinc.github.io/ksqldb-recipes/customer-360/loyalty-rewards/#ksqldb-code)
+
 ### `ARRAY_DISTINCT`
 
 Since: 0.10.0
@@ -324,6 +334,9 @@ Creates a flat string representation of all the elements contained in the given 
 The elements in the resulting string are separated by the chosen `delimiter`, 
 which is an optional parameter that falls back to a comma `,`. The current implementation only
 allows for array elements of primitive ksqlDB types.
+
+!!! Tip "See ARRAY_JOIN in action"
+    - [Match users for online dating](https://confluentinc.github.io/ksqldb-recipes/customer-360/online-dating/#ksqldb-code)
 
 ### `ARRAY_LENGTH`
 
@@ -408,6 +421,9 @@ If the array field is NULL then NULL is returned.
 
 An optional second parameter can be used to specify whether to sort the elements in 'ASC'ending or 'DESC'ending order. If neither is specified then the default is ascending order. 
 
+!!! Tip "See ARRAY_SORT in action"
+    - [Match users for online dating](https://confluentinc.github.io/ksqldb-recipes/customer-360/online-dating/#ksqldb-code)
+
 ### `ARRAY_UNION`
 
 Since: 0.10.0
@@ -426,24 +442,6 @@ ARRAY_UNION(ARRAY[1, 2, 3, 1, 2], [4, 1])  => [1, 2, 3, 4]
 ARRAY_UNION(ARRAY['apple', 'apple', NULL, 'cherry'], ARRAY['cherry'])  => ['apple', NULL, 'cherry']
 ```
 
-### `ARRAY_CONCAT`
-
-Since: 0.20.0
-
-```sql
-ARRAY_CONCAT(array1, array2)
-```
-
-Returns an array representing the concatenation of both input arrays.
-
-Returns NULL if both input arrays are NULL. If only one argument is NULL, the result is the other argument.
-
-Examples:
-```sql 
-ARRAY_CONCAT(ARRAY[1, 2, 3, 1, 2], [4, 1])  => [1, 2, 3, 1, 2, 4, 1]
-ARRAY_CONCAT(ARRAY['apple', 'apple', NULL, 'cherry'], ARRAY['cherry'])  => ['apple', 'apple', NULL, 'cherry', 'cherry']
-```
-
 ### `AS_MAP`
 
 Since: 0.6.0
@@ -453,6 +451,9 @@ AS_MAP(keys, vals)
 ```
 
 Construct a map from a list of keys and a list of values.
+
+!!! Tip "See AS_MAP in action"
+    - [Match users for online dating](https://confluentinc.github.io/ksqldb-recipes/customer-360/online-dating/#ksqldb-code)
 
 ### `ELT`
 
@@ -650,10 +651,13 @@ Since: -
 
 ```sql
 CONCAT(col1, col2, 'hello', ..., col-n)
-CONCAT(bytes1, bytes2, ..., bytes-n)
 ```
 
-Concatenate two or more string or bytes expressions. Any inputs which evaluate to NULL are replaced with an empty string or bytes in the output.
+Concatenate two or more string expressions. Any input strings which evaluate
+to NULL are replaced with an empty string in the output.
+
+!!! Tip "See CONCAT in action"
+    - [Enrich orders with change data capture (CDC)](https://confluentinc.github.io/ksqldb-recipes/real-time-analytics/denormalization/#ksqldb-code)
 
 ### `CONCAT_WS`
 
@@ -663,7 +667,7 @@ Since: 0.10.0
 CONCAT_WS(separator, expr1, expr2, ...)
 ```
 
-Concatenates two or more string or bytes expressions, inserting a separator string or bytes between each.
+Concatenates two or more string expressions, inserting a separator string between each.
 
 If the separator is NULL, this function returns NULL.
 Any expressions which evaluate to NULL are skipped.
@@ -714,7 +718,7 @@ If the requested JSONPath does not exist, the function returns NULL.
 
 The result of EXTRACTJSONFIELD is always a STRING. Use `CAST` to convert the result to another
 type. For example, `CAST(EXTRACTJSONFIELD(message, '$.log.instance') AS INT)` will extract the
-instance number from the above JSON object as a INT.
+instance number from the above JSON object as an INT.
 
 The return type of the UDF is STRING, so JSONPaths that select
 multiple elements, like those containing wildcards, aren't supported.
@@ -729,17 +733,6 @@ multiple elements, like those containing wildcards, aren't supported.
     the example above could be defined using a statement similar to this:
 
     `CREATE STREAM LOGS (LOG STRUCT<CLOUD STRING, APP STRING, INSTANCE INT>, ...) WITH (VALUE_FORMAT='JSON', ...)`
-
-### `FROM_BYTES`
-
-Since: - 0.21
-
-```sql
-FROM_BYTES(bytes, encoding)
-```
-
-Converts a BYTES column to a STRING in the specified encoding type.
-Supported encoding types are: `hex`, `utf8`, `ascii`, and `base64`.
 
 ### `INITCAP`
 
@@ -760,7 +753,7 @@ Since: 0.10.0
 INSTR(string, substring, [position], [occurrence])
 ```
 
-Returns the position of `substring` in `string`. The first character is at position 1.
+Returns the position of the `substring` in the `string`. The first character is at position 1.
 
 If `position` is provided, search starts from the specified position. 
 Negative `position` causes the search to work from end to start of `string`.
@@ -795,11 +788,10 @@ Convert a string to lowercase.
 Since: -
 
 ```sql
-LEN(string)
-LEN(bytes)
+LEN(col1)
 ```
 
-The length of a string or the number of bytes in a BYTES value.
+The length of a string.
 
 ### `LPAD`
 
@@ -809,10 +801,10 @@ Since: 0.10.0
 LPAD(input, length, padding)
 ```
 
-Pads the input string or bytes, starting from the left, with the specified padding of the same type until the target length is reached. 
-If the input is longer than the specified target length, it is truncated.
+Pads the input string, beginning from the left, with the specified padding string, until the target length is reached. 
+If the input string is longer than the specified target length, it is truncated.
 
-If the padding string or byte array is empty or NULL, or the target length is negative, NULL is returned.
+If the padding string is empty or NULL, or the target length is negative, NULL is returned.
 
 Examples:
 ```sql
@@ -909,6 +901,9 @@ REPLACE(col1, 'foo', 'bar')
 
 Replace all instances of a substring in a string with a new string.
 
+!!! Tip "See REPLACE in action"
+    - [Detect and analyze SSH attacks](https://confluentinc.github.io/ksqldb-recipes/cybersecurity/SSH-attack/#ksqldb-code)
+
 ### `REGEXP_EXTRACT`
 
 Since: 0.8.0
@@ -921,7 +916,7 @@ REGEXP_EXTRACT('.*', col1)
 REGEXP_EXTRACT('(([AEIOU]).)', col1, 2)
 ```
 
-Extract the first subtring matched by the regex pattern from the input.
+Extract the first substring matched by the regex pattern from the input.
 
 A capturing group number can also be specified in order to return that specific group. If a number isn't specified,
 the entire substring is returned by default.
@@ -941,7 +936,7 @@ REGEXP_EXTRACT_ALL('.*', col1)
 REGEXP_EXTRACT_ALL('(([AEIOU]).)', col1, 2)
 ```
 
-Extract all subtrings matched by the regex pattern from the input.
+Extract all substrings matched by the regex pattern from the input.
 
 A capturing group number can also be specified in order to return that specific group. If a number isn't specified,
 the entire substring is returned by default.
@@ -989,10 +984,9 @@ Since: 0.10.0
 RPAD(input, length, padding)
 ```
 
-Pads the input string or bytes, starting from the end, with the specified padding of the same type until the target length is reached. 
-If the input is longer than the specified target length, it is truncated. 
+Pads the input string, starting from the end, with the specified padding string until the target length is reached. If the input string is longer than the specified target length it will be truncated. 
 
-If the padding string or byte array is empty or NULL, or the target length is negative, NULL is returned.
+If the padding string is empty or NULL, or the target length is negative, then NULL is returned.
 
 Examples:
 ```sql
@@ -1009,17 +1003,20 @@ Since: 0.6.0
 SPLIT(col1, delimiter)
 ```
 
-Splits a string into an array of substrings, or
-bytes into an array of subarrays, based
+Splits a string into an array of substrings based
 on a delimiter. If the delimiter is not found,
-the original string or byte array is returned as the only
+then the original string is returned as the only
 element in the array. If the delimiter is empty,
-every character in the string or byte in the array is split.
-Returns NULL if either parameter is NULL.
+then all characters in the string are split.
+If either, string or delimiter, are NULL, then a
+NULL value is returned.
 
 If the delimiter is found at the beginning or end
-of the string or bytes, or there are contiguous delimiters,
+of the string, or there are contiguous delimiters,
 then an empty space is added to the array.
+
+!!! Tip "See SPLIT in action"
+    - [Detect and analyze SSH attacks](https://confluentinc.github.io/ksqldb-recipes/cybersecurity/SSH-attack/#ksqldb-code)
 
 ### `SPLIT_TO_MAP`
 
@@ -1050,27 +1047,15 @@ SUBSTRING(col1, 2, 5)
 
 ```sql
 SUBSTRING(str, pos, [len])
-SUBSTRING(bytes, pos, [len])
 ```
 
-Returns the portion of `str` or `bytes` that starts at
-`pos` (first character or byte is at position 1) and
+Returns a substring of `str` that starts at
+`pos` (first character is at position 1) and
 has length `len`, or continues to the end of
-the string or bytes.
+the string.
 
 For example, `SUBSTRING("stream", 1, 4)`
 returns "stre".
-
-### `TO_BYTES`
-
-Since: - 0.21
-
-```sql
-TO_BYTES(string, encoding)
-```
-
-Converts a STRING column in the specified encoding type to a BYTES column.
-Supported encoding types are: `hex`, `utf8`, `ascii`, and `base64`.
 
 ### `TRIM`
 
@@ -1092,6 +1077,9 @@ UCASE(col1)
 
 Convert a string to uppercase.
 
+!!! Tip "See UCASE in action"
+    - [Handle corrupted data from Salesforce](https://confluentinc.github.io/ksqldb-recipes/anomaly-detection/salesforce/#ksqldb-code)
+
 ### `UUID`
 
 Since: 0.10.0
@@ -1103,6 +1091,87 @@ Create a Universally Unique Identifier (UUID) generated according to RFC 4122.
 A call to UUID() returns a value conforming to UUID version 4, sometimes called 
 "random UUID", as described in RFC 4122. The value is a 128-bit number represented 
 as a string of five hexadecimal numbers _aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee_.
+
+## Bytes
+
+### `BIGINT_FROM_BYTES`
+
+Since: 0.23.1
+
+```sql
+BIGINT_FROM_BYTES(col1, [byteOrder])
+```
+
+Converts a BYTES value to an BIGINT value according to the specified byte order.
+BYTES must be 8 bytes long or a NULL value will be returned.
+
+Byte order values must be 'BIG_ENDIAN' or 'LITTLE_ENDIAN'. If omitted, 'BIG_ENDIAN' is used.
+A NULL value is returned if an invalid byte order value is used.
+
+Example, where `b` is a bytes value represented as a base64 string `AAAAASoF8gA=`:
+```sql
+BIGINT_FROM_BYTES(b, 'BIG_ENDIAN') -> 5000000000
+```
+
+### `DOUBLE_FROM_BYTES`
+
+Since: 0.23.1
+
+```sql
+DOUBLE_FROM_BYTES(col1, [byteOrder])
+```
+
+Converts a BYTES value to an DOUBLE value according to the specified byte order.
+BYTES must be 8 bytes long or a NULL value will be returned.
+
+Byte order values must be 'BIG_ENDIAN' or 'LITTLE_ENDIAN'. If omitted, 'BIG_ENDIAN' is used.
+A NULL value is returned if an invalid byte order value is used.
+
+Example, where `b` is a bytes value represented as a base64 string `QICm/ZvJ9YI=`:
+```sql
+DOUBLE_FROM_BYTES(b, 'BIG_ENDIAN') -> 532.8738323
+```
+
+### `FROM_BYTES`
+
+Since: 0.21.0
+
+```sql
+FROM_BYTES(col1, encoding)
+```
+
+Converts a BYTES value to STRING in the specified encoding.
+The accepted encoders are 'hex', 'utf8', 'ascii', and 'base64'.
+
+### `INT_FROM_BYTES`
+
+Since: 0.23.1
+
+```sql
+INT_FROM_BYTES(col1, [byteOrder])
+```
+
+Converts a BYTES value to an INT value according to the specified byte order.
+BYTES must be 4 bytes long or a NULL value will be returned.
+
+Byte order values must be 'BIG_ENDIAN' or 'LITTLE_ENDIAN'. If omitted, 'BIG_ENDIAN' is used.
+A NULL value is returned if an invalid byte order value is used.
+
+Examples, where `b_big` is a bytes value represented as a base64 string `AAAH5Q==`:
+```sql
+INT_FROM_BYTES(b, 'BIG_ENDIAN') -> 2021
+```
+
+### `TO_BYTES`
+
+Since: 0.21.0
+
+```sql
+TO_BYTES(col1, encoding)
+```
+
+Converts a STRING value in the specified encoding to BYTES.
+The accepted encoders are 'hex', 'utf8', 'ascii', and 'base64'.
 
 ## Nulls
 
@@ -1117,7 +1186,7 @@ COALESCE(a, b, c, d)
 Returns the first parameter that is not NULL. All parameters must be of the same type.
 
 Where the parameter type is a complex type, for example `ARRAY` or `STRUCT`, the contents of the
-complex type are not inspected. The behaviour is the same: the first NOT NULL element is returned.
+complex type are not inspected. The behavior is the same: the first NOT NULL element is returned.
 
 ### `IFNULL`
 
@@ -1241,17 +1310,17 @@ Deprecated since 0.16.0 (use FORMAT_TIMESTAMP)
 TIMESTAMPTOSTRING(ROWTIME, 'yyyy-MM-dd HH:mm:ss.SSS' [, TIMEZONE])
 ```
 
-Converts a BIGINT millisecond timestamp value into
-the string representation of the timestamp in
-the given format. Single quotes in the
-timestamp format can be escaped with two
-successive single quotes, `''`, for example:
+Converts a BIGINT millisecond timestamp value into the string representation
+of the timestamp in the given format. Single quotes in the timestamp format
+can be escaped with two successive single quotes, `''`, for example:
 `'yyyy-MM-dd''T''HH:mm:ssX'`.
-TIMEZONE is an optional parameter and it is a
-`java.util.TimeZone` ID format, for example: "UTC",
-"America/Los_Angeles", "PDT", "Europe/London". For
-more information on timestamp formats, see
-[DateTimeFormatter](https://cnfl.io/java-dtf).
+
+TIMEZONE is an optional parameter, and it is a `java.util.TimeZone` ID format,
+for example, "UTC", "America/Los_Angeles", "PDT", or "Europe/London". For more
+information on timestamp formats, see [DateTimeFormatter](https://cnfl.io/java-dtf).
+
+!!! Tip "See TIMESTAMPTOSTRING in action"
+    - [Detect unusual credit card activity](https://confluentinc.github.io/ksqldb-recipes/anomaly-detection/credit-card-activity/#ksqldb-code)
 
 ### `FORMAT_TIMESTAMP`
 
@@ -1266,6 +1335,10 @@ example: `'yyyy-MM-dd''T''HH:mm:ssX'`.
 TIMEZONE is an optional parameter and it is a `java.util.TimeZone` ID format, for example: "UTC",
 "America/Los_Angeles", "PDT", "Europe/London". For more information on timestamp formats, see
 [DateTimeFormatter](https://cnfl.io/java-dtf).
+
+!!! Tip "See FORMAT_TIMESTAMP in action"
+    - [Analyze datacenter power usage](https://confluentinc.github.io/ksqldb-recipes/real-time-analytics/datacenter/#ksqldb-code)
+    - [Detect and analyze SSH attacks](https://confluentinc.github.io/ksqldb-recipes/cybersecurity/SSH-attack/#ksqldb-code)
 
 ### `PARSE_TIMESTAMP`
 
@@ -1346,6 +1419,9 @@ FROM_UNIXTIME(milliseconds)
 ```
 
 Converts a BIGINT millisecond timestamp value into a TIMESTAMP value.
+
+!!! Tip "See FROM_UNIXTIME in action"
+    - [Analyze datacenter power usage](https://confluentinc.github.io/ksqldb-recipes/real-time-analytics/datacenter/#ksqldb-code)
 
 ### `FROM_DAYS`
 

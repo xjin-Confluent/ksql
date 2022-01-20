@@ -22,13 +22,18 @@ import io.confluent.ksql.execution.streams.materialization.Locator.KsqlKey;
 import io.confluent.ksql.execution.streams.materialization.Locator.KsqlPartitionLocation;
 import io.confluent.ksql.execution.streams.materialization.Materialization;
 import io.confluent.ksql.execution.streams.materialization.Row;
+import io.confluent.ksql.physical.common.QueryRowImpl;
 import io.confluent.ksql.physical.common.operators.AbstractPhysicalOperator;
 import io.confluent.ksql.physical.common.operators.UnaryPhysicalOperator;
 import io.confluent.ksql.planner.plan.DataSourceNode;
+import io.confluent.ksql.planner.plan.KeyConstraint;
+import io.confluent.ksql.planner.plan.KeyConstraint.ConstraintOperator;
 import io.confluent.ksql.planner.plan.PlanNode;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import org.apache.kafka.streams.query.Position;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,11 +48,12 @@ public class KeyedTableLookupOperator
 
   private ImmutableList<KsqlPartitionLocation> partitionLocations;
   private Iterator<Row> resultIterator;
-  private Iterator<GenericKey> keyIterator;
+  private Iterator<KsqlKey> keyIterator;
   private Iterator<KsqlPartitionLocation> partitionLocationIterator;
   private KsqlPartitionLocation nextLocation;
-  private GenericKey nextKey;
+  private KsqlKey nextKey;
   private long returnedRows = 0;
+  private Optional<Position> position;
 
   public KeyedTableLookupOperator(
       final Materialization mat,
@@ -65,13 +71,10 @@ public class KeyedTableLookupOperator
       if (!nextLocation.getKeys().isPresent()) {
         throw new IllegalStateException("Table lookup queries should be done with keys");
       }
-      keyIterator = nextLocation.getKeys().get().stream().map(KsqlKey::getKey).iterator();
+      keyIterator = nextLocation.getKeys().get().stream().iterator();
       if (keyIterator.hasNext()) {
         nextKey = keyIterator.next();
-        resultIterator = mat.nonWindowed()
-            .get(nextKey, nextLocation.getPartition())
-            .map(ImmutableList::of)
-            .orElse(ImmutableList.of()).iterator();
+        resultIterator = getMatIterator(nextKey);
       }
     }
   }
@@ -90,17 +93,55 @@ public class KeyedTableLookupOperator
         if (!nextLocation.getKeys().isPresent()) {
           throw new IllegalStateException("Table lookup queries should be done with keys");
         }
-        keyIterator = nextLocation.getKeys().get().stream().map(KsqlKey::getKey).iterator();
+        keyIterator = nextLocation.getKeys().get().stream().iterator();
       }
       nextKey = keyIterator.next();
-      resultIterator = mat.nonWindowed()
-          .get(nextKey, nextLocation.getPartition())
-          .map(ImmutableList::of)
-          .orElse(ImmutableList.of()).iterator();
+      resultIterator = getMatIterator(nextKey);
     }
 
     returnedRows++;
-    return resultIterator.next();
+    final Row row = resultIterator.next();
+    return QueryRowImpl.of(
+        row.schema(),
+        row.key(),
+        row.window(),
+        row.value(),
+        row.rowTime()
+    );
+  }
+
+  private Iterator<Row> getMatIterator(final KsqlKey ksqlKey) {
+    if (!(nextKey instanceof KeyConstraint)) {
+      throw new IllegalStateException(String.format("Keyed lookup queries should be done with "
+        + "key constraints: %s", ksqlKey.toString()));
+    }
+    final KeyConstraint keyConstraintKey = (KeyConstraint) ksqlKey;
+    if (keyConstraintKey.getOperator() == ConstraintOperator.EQUAL) {
+      return mat.nonWindowed()
+        .get(ksqlKey.getKey(), nextLocation.getPartition())
+        .getRowIterator();
+    } else if (keyConstraintKey.getOperator() == ConstraintOperator.GREATER_THAN
+        || keyConstraintKey.getOperator() == ConstraintOperator.GREATER_THAN_OR_EQUAL) {
+      //Underlying store will always return keys inclusive the endpoints
+      //and filtering is used to trim start and end of the range in case of ">"
+      final GenericKey fromKey = keyConstraintKey.getKey();
+      final GenericKey toKey = null;
+      return mat.nonWindowed()
+          .get(nextLocation.getPartition(), fromKey, toKey)
+          .getRowIterator();
+    } else if (keyConstraintKey.getOperator() == ConstraintOperator.LESS_THAN
+        || keyConstraintKey.getOperator() == ConstraintOperator.LESS_THAN_OR_EQUAL) {
+      //Underlying store will always return keys inclusive the endpoints
+      //and filtering is used to trim start and end of the range in case of "<"
+      final GenericKey fromKey = null;
+      final GenericKey toKey = keyConstraintKey.getKey();
+      return mat.nonWindowed()
+          .get(nextLocation.getPartition(), fromKey, toKey)
+          .getRowIterator();
+    } else {
+      throw new IllegalStateException(String.format("Invalid comparator type "
+        + keyConstraintKey.getOperator()));
+    }
   }
 
   @Override

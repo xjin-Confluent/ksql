@@ -49,11 +49,22 @@ public class ProtobufFormat extends ConnectFormat {
     return SUPPORTED_FEATURES;
   }
 
+
+  @Override
+  public Set<String> getSupportedProperties() {
+    return ProtobufProperties.SUPPORTED_PROPERTIES;
+  }
+
+  @Override
+  public Set<String> getInheritableProperties() {
+    return ProtobufProperties.INHERITABLE_PROPERTIES;
+  }
+
   @Override
   protected ConnectSchemaTranslator getConnectSchemaTranslator(
       final Map<String, String> formatProps
   ) {
-    FormatProperties.validateProperties(name(), formatProps, ImmutableSet.of());
+    FormatProperties.validateProperties(name(), formatProps, getSupportedProperties());
     return new ProtobufSchemaTranslator();
   }
 
@@ -66,6 +77,7 @@ public class ProtobufFormat extends ConnectFormat {
       final Class<T> targetType,
       final boolean isKey
   ) {
-    return ProtobufSerdeFactory.createSerde(connectSchema, config, srFactory, targetType, isKey);
+    return new ProtobufSerdeFactory(new ProtobufProperties(formatProps))
+        .createSerde(connectSchema, config, srFactory, targetType, isKey);
   }
 }

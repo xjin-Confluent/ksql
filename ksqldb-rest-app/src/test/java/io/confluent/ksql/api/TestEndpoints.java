@@ -24,11 +24,13 @@ import io.confluent.ksql.api.server.MetricsCallbackHolder;
 import io.confluent.ksql.api.spi.Endpoints;
 import io.confluent.ksql.api.spi.QueryPublisher;
 import io.confluent.ksql.api.utils.RowGenerator;
+import io.confluent.ksql.query.QueryId;
 import io.confluent.ksql.reactive.BufferedPublisher;
 import io.confluent.ksql.rest.EndpointResponse;
 import io.confluent.ksql.rest.entity.ClusterTerminateRequest;
 import io.confluent.ksql.rest.entity.HeartbeatMessage;
 import io.confluent.ksql.rest.entity.KsqlEntity;
+import io.confluent.ksql.rest.entity.KsqlEntityList;
 import io.confluent.ksql.rest.entity.KsqlMediaType;
 import io.confluent.ksql.rest.entity.KsqlRequest;
 import io.confluent.ksql.rest.entity.LagReportingMessage;
@@ -55,7 +57,7 @@ public class TestEndpoints implements Endpoints {
 
   private Supplier<RowGenerator> rowGeneratorFactory;
   private TestInsertsSubscriber insertsSubscriber;
-  private List<KsqlEntity> ksqlEndpointResponse;
+  private KsqlEntityList ksqlEndpointResponse;
   private String lastSql;
   private JsonObject lastProperties;
   private JsonObject lastSessionVariables;
@@ -67,6 +69,7 @@ public class TestEndpoints implements Endpoints {
   private RuntimeException createInsertsSubscriberException;
   private RuntimeException executeKsqlRequestException;
   private ApiSecurityContext lastApiSecurityContext;
+  private int queryCount = 0;
 
   @Override
   public synchronized CompletableFuture<QueryPublisher> createQueryPublisher(
@@ -77,7 +80,8 @@ public class TestEndpoints implements Endpoints {
       final Context context,
       final WorkerExecutor workerExecutor,
       final ApiSecurityContext apiSecurityContext,
-      final MetricsCallbackHolder metricsCallbackHolder) {
+      final MetricsCallbackHolder metricsCallbackHolder,
+      final Optional<Boolean> isInternalRequest) {
     CompletableFuture<QueryPublisher> completableFuture = new CompletableFuture<>();
     if (createQueryPublisherException != null) {
       createQueryPublisherException.fillInStackTrace();
@@ -93,9 +97,11 @@ public class TestEndpoints implements Endpoints {
           rowGeneratorFactory.get(),
           rowsBeforePublisherError,
           push,
-          limit);
+          limit,
+          new QueryId("queryId" + (queryCount > 0 ? queryCount : "")));
       queryPublishers.add(queryPublisher);
       completableFuture.complete(queryPublisher);
+      queryCount++;
     }
     return completableFuture;
   }
@@ -241,7 +247,7 @@ public class TestEndpoints implements Endpoints {
   }
 
   public synchronized void setKsqlEndpointResponse(final List<KsqlEntity> entities) {
-    this.ksqlEndpointResponse = ImmutableList.copyOf(entities);
+    this.ksqlEndpointResponse = new KsqlEntityList(ImmutableList.copyOf(entities));
   }
 
   public synchronized String getLastSql() {

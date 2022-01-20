@@ -19,6 +19,7 @@ import static io.confluent.ksql.api.perf.RunnerUtils.DEFAULT_COLUMN_NAMES;
 import static io.confluent.ksql.api.perf.RunnerUtils.DEFAULT_COLUMN_TYPES;
 import static io.confluent.ksql.api.perf.RunnerUtils.DEFAULT_KEY;
 import static io.confluent.ksql.api.perf.RunnerUtils.DEFAULT_ROW;
+import static io.confluent.ksql.api.perf.RunnerUtils.SCHEMA;
 
 import io.confluent.ksql.api.auth.ApiSecurityContext;
 import io.confluent.ksql.api.impl.BlockingQueryPublisher;
@@ -37,6 +38,9 @@ import io.confluent.ksql.rest.entity.HeartbeatMessage;
 import io.confluent.ksql.rest.entity.KsqlMediaType;
 import io.confluent.ksql.rest.entity.KsqlRequest;
 import io.confluent.ksql.rest.entity.LagReportingMessage;
+import io.confluent.ksql.schema.ksql.LogicalSchema;
+import io.confluent.ksql.util.ConsistencyOffsetVector;
+import io.confluent.ksql.util.PushQueryMetadata.ResultType;
 import io.vertx.core.Context;
 import io.vertx.core.MultiMap;
 import io.vertx.core.WorkerExecutor;
@@ -105,7 +109,8 @@ public class QueryStreamRunner extends BasePerfRunner {
         final Context context,
         final WorkerExecutor workerExecutor,
         final ApiSecurityContext apiSecurityContext,
-        final MetricsCallbackHolder metricsCallbackHolder) {
+        final MetricsCallbackHolder metricsCallbackHolder,
+        final Optional<Boolean> isInternalRequest) {
       QueryStreamPublisher publisher = new QueryStreamPublisher(context,
           server.getWorkerExecutor());
       publisher.setQueryHandle(new TestQueryHandle(), false, false);
@@ -237,6 +242,11 @@ public class QueryStreamRunner extends BasePerfRunner {
     }
 
     @Override
+    public LogicalSchema getLogicalSchema() {
+      return SCHEMA;
+    }
+
+    @Override
     public BlockingRowQueue getQueue() {
       return queue;
     }
@@ -248,6 +258,16 @@ public class QueryStreamRunner extends BasePerfRunner {
     @Override
     public QueryId getQueryId() {
       return new QueryId("queryId");
+    }
+
+    @Override
+    public Optional<ConsistencyOffsetVector> getConsistencyOffsetVector() {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<ResultType> getResultType() {
+      return Optional.empty();
     }
 
     @Override

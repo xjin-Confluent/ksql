@@ -174,7 +174,7 @@ manipulate data, by creating a derivative of existing records.
 ksqlDB Deployment Modes
 -----------------------
 
-You can use deploy your ksqlDB streaming applications using either **Interactive** or **Headless** mode. We recommend using interactive mode when possible.
+You can deploy your ksqlDB streaming applications using either **Interactive** or **Headless** mode. We recommend using interactive mode when possible.
 
 In both deployment modes, ksqlDB enables distributing the processing load
 for your ksqlDB applications across all ksqlDB Server instances, and you can
@@ -482,15 +482,9 @@ Usually, ksqlDB isn't a good fit for BI reports, ad-hoc querying, or
 queries with random access patterns, because it's a continuous query
 system on data streams.
 
-To get started with ksqlDB, try the
-[Tutorials and Examples](../tutorials/index.md).
-
-To get started with {{ site.kstreams }}, try the
-[Streams Quick Start](https://docs.confluent.io/current/streams/quickstart.html).
-
 Next Steps
 ----------
-
--   [Quickstart](https://ksqldb.io/quickstart.html)
--   [Streams Developer Guide](https://docs.confluent.io/current/streams/developer-guide/index.html)
-
+- See ksqlDB in action with the [Quickstart](https://ksqldb.io/quickstart.html).
+- Learn more with the [ksqlDB Tutorials and Examples](../tutorials/index.md).  
+- Take the developer courses: [Introduction to ksqlDB](https://developer.confluent.io/learn-kafka/ksqldb/intro/)
+  and [ksqlDB Architecture](https://developer.confluent.io/learn-kafka/inside-ksqldb/streaming-architecture/).

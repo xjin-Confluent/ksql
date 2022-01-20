@@ -32,7 +32,6 @@ import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.collect.Iterables;
-import io.confluent.ksql.execution.ddl.commands.KsqlTopic;
 import io.confluent.ksql.execution.expression.tree.ArithmeticUnaryExpression;
 import io.confluent.ksql.execution.expression.tree.ArithmeticUnaryExpression.Sign;
 import io.confluent.ksql.execution.expression.tree.ComparisonExpression;
@@ -48,14 +47,13 @@ import io.confluent.ksql.execution.expression.tree.StringLiteral;
 import io.confluent.ksql.execution.windows.WindowTimeClause;
 import io.confluent.ksql.function.FunctionRegistry;
 import io.confluent.ksql.metastore.MutableMetaStore;
-import io.confluent.ksql.metastore.model.KsqlStream;
-import io.confluent.ksql.metastore.model.KsqlTable;
 import io.confluent.ksql.name.ColumnName;
 import io.confluent.ksql.name.SourceName;
 import io.confluent.ksql.parser.KsqlParser.PreparedStatement;
 import io.confluent.ksql.parser.exception.ParseFailedException;
 import io.confluent.ksql.parser.tree.AliasedRelation;
 import io.confluent.ksql.parser.tree.AllColumns;
+import io.confluent.ksql.parser.tree.AlterSystemProperty;
 import io.confluent.ksql.parser.tree.CreateConnector;
 import io.confluent.ksql.parser.tree.CreateSource;
 import io.confluent.ksql.parser.tree.CreateStream;
@@ -78,7 +76,6 @@ import io.confluent.ksql.parser.tree.Query;
 import io.confluent.ksql.parser.tree.RegisterType;
 import io.confluent.ksql.parser.tree.SelectItem;
 import io.confluent.ksql.parser.tree.SetProperty;
-import io.confluent.ksql.parser.tree.ShowColumns;
 import io.confluent.ksql.parser.tree.SingleColumn;
 import io.confluent.ksql.parser.tree.Statement;
 import io.confluent.ksql.parser.tree.TableElement;
@@ -86,17 +83,11 @@ import io.confluent.ksql.parser.tree.TableElements;
 import io.confluent.ksql.parser.tree.TerminateQuery;
 import io.confluent.ksql.parser.tree.WithinExpression;
 import io.confluent.ksql.query.QueryId;
-import io.confluent.ksql.schema.ksql.LogicalSchema;
 import io.confluent.ksql.schema.ksql.types.SqlArray;
 import io.confluent.ksql.schema.ksql.types.SqlBaseType;
 import io.confluent.ksql.schema.ksql.types.SqlStruct;
-import io.confluent.ksql.schema.ksql.types.SqlType;
 import io.confluent.ksql.schema.ksql.types.SqlTypes;
-import io.confluent.ksql.serde.FormatFactory;
 import io.confluent.ksql.serde.FormatInfo;
-import io.confluent.ksql.serde.KeyFormat;
-import io.confluent.ksql.serde.SerdeFeatures;
-import io.confluent.ksql.serde.ValueFormat;
 import io.confluent.ksql.util.MetaStoreFixture;
 import java.math.BigDecimal;
 import java.util.List;
@@ -116,74 +107,9 @@ public class KsqlParserTest {
 
   private MutableMetaStore metaStore;
 
-  private static final SqlType addressSchema = SqlTypes.struct()
-      .field("NUMBER", SqlTypes.BIGINT)
-      .field("STREET", SqlTypes.STRING)
-      .field("CITY", SqlTypes.STRING)
-      .field("STATE", SqlTypes.STRING)
-      .field("ZIPCODE", SqlTypes.BIGINT)
-      .build();
-
-  private static final SqlType categorySchema = SqlTypes.struct()
-      .field("ID", SqlTypes.BIGINT)
-      .field("NAME", SqlTypes.STRING)
-      .build();
-
-  private static final SqlType itemInfoSchema = SqlStruct.builder()
-      .field("ITEMID", SqlTypes.BIGINT)
-      .field("NAME", SqlTypes.STRING)
-      .field("CATEGORY", categorySchema)
-      .build();
-
-  private static final LogicalSchema ORDERS_SCHEMA = LogicalSchema.builder()
-      .keyColumn(ColumnName.of("k0"), SqlTypes.STRING)
-      .valueColumn(ColumnName.of("ORDERTIME"), SqlTypes.BIGINT)
-      .valueColumn(ColumnName.of("ORDERID"), SqlTypes.BIGINT)
-      .valueColumn(ColumnName.of("ITEMID"), SqlTypes.STRING)
-      .valueColumn(ColumnName.of("ITEMINFO"), itemInfoSchema)
-      .valueColumn(ColumnName.of("ORDERUNITS"), SqlTypes.INTEGER)
-      .valueColumn(ColumnName.of("ARRAYCOL"), SqlTypes.array(SqlTypes.DOUBLE))
-      .valueColumn(ColumnName.of("MAPCOL"), SqlTypes.map(SqlTypes.STRING, SqlTypes.DOUBLE))
-      .valueColumn(ColumnName.of("ADDRESS"), addressSchema)
-      .build();
-
   @Before
   public void init() {
     metaStore = MetaStoreFixture.getNewMetaStore(mock(FunctionRegistry.class));
-
-    final KsqlTopic ksqlTopicOrders = new KsqlTopic(
-        "orders_topic",
-        KeyFormat.nonWindowed(FormatInfo.of(FormatFactory.KAFKA.name()), SerdeFeatures.of()),
-        ValueFormat.of(FormatInfo.of(FormatFactory.JSON.name()), SerdeFeatures.of())
-    );
-
-    final KsqlStream<?> ksqlStreamOrders = new KsqlStream<>(
-        "sqlexpression",
-        SourceName.of("ADDRESS"),
-        ORDERS_SCHEMA,
-        Optional.empty(),
-        false,
-        ksqlTopicOrders
-    );
-
-    metaStore.putSource(ksqlStreamOrders, false);
-
-    final KsqlTopic ksqlTopicItems = new KsqlTopic(
-        "item_topic",
-        KeyFormat.nonWindowed(FormatInfo.of(FormatFactory.KAFKA.name()), SerdeFeatures.of()),
-        ValueFormat.of(FormatInfo.of(FormatFactory.JSON.name()), SerdeFeatures.of())
-    );
-
-    final KsqlTable<String> ksqlTableOrders = new KsqlTable<>(
-        "sqlexpression",
-        SourceName.of("ITEMID"),
-        ORDERS_SCHEMA,
-        Optional.empty(),
-        false,
-        ksqlTopicItems
-    );
-
-    metaStore.putSource(ksqlTableOrders, false);
   }
 
   @Test
@@ -445,6 +371,28 @@ public class KsqlParserTest {
   }
 
   @Test
+  public void testCreateSourceTable() {
+    // When:
+    final CreateTable stmt = (CreateTable) KsqlParserTestUtil.buildSingleAst(
+        "CREATE SOURCE TABLE foozball (id VARCHAR PRIMARY KEY) WITH (kafka_topic='foozball', " +
+            "value_format='json', partitions=1, replicas=-1);", metaStore).getStatement();
+
+    // Then:
+    assertThat(stmt.isSource(), is(true));
+  }
+
+  @Test
+  public void testCreateSourceStream() {
+    // When:
+    final CreateStream stmt = (CreateStream) KsqlParserTestUtil.buildSingleAst(
+        "CREATE SOURCE STREAM foozball (id VARCHAR KEY) WITH (kafka_topic='foozball', " +
+            "value_format='json', partitions=1, replicas=-1);", metaStore).getStatement();
+
+    // Then:
+    assertThat(stmt.isSource(), is(true));
+  }
+
+  @Test
   public void testNegativeInWith() {
     // When:
     final CreateSource stmt = (CreateSource) KsqlParserTestUtil.buildSingleAst(
@@ -453,18 +401,6 @@ public class KsqlParserTest {
 
     // Then:
     assertThat(stmt.getProperties().getReplicas(), is(Optional.of((short) -1)));
-  }
-
-  @Test
-  public void testReservedRowTimeAlias() {
-    // When:
-    final Exception e = assertThrows(
-        ParseFailedException.class,
-        () -> KsqlParserTestUtil.buildSingleAst("SELECT C1 as ROWTIME FROM test1 t1;", metaStore)
-    );
-
-    // Then:
-    assertThat(e.getMessage(), containsString("'ROWTIME' is a reserved column name. You cannot use it as an alias for a column."));
   }
 
   @Test
@@ -747,6 +683,17 @@ public class KsqlParserTest {
     assertThat(setProperty.toString(), is("SetProperty{propertyName='auto.offset.reset', propertyValue='earliest'}"));
     assertThat(setProperty.getPropertyName(), is("auto.offset.reset"));
     assertThat(setProperty.getPropertyValue(), is("earliest"));
+  }
+
+  @Test
+  public void testAlterSystemProperties() {
+    final String simpleQuery = "ALTER SYSTEM 'ksql.persistent.prefix'='test';";
+    final Statement statement = KsqlParserTestUtil.buildSingleAst(simpleQuery, metaStore).getStatement();
+    Assert.assertTrue(statement instanceof AlterSystemProperty);
+    final AlterSystemProperty alterSystemProperty = (AlterSystemProperty) statement;
+    assertThat(alterSystemProperty.toString(), is("AlterSystemProperty{propertyName='ksql.persistent.prefix', propertyValue='test'}"));
+    assertThat(alterSystemProperty.getPropertyName(), is("ksql.persistent.prefix"));
+    assertThat(alterSystemProperty.getPropertyValue(), is("test"));
   }
 
   @Test

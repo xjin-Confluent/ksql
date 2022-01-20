@@ -21,6 +21,13 @@ SELECT [...], aggregate_function
   WINDOW HOPPING (SIZE <time_span> <time_units>, ADVANCE BY <time_span> <time_units>) [...]
 ```
 
+## ALTER property
+Change a property value.
+
+```sql
+ALTER 'auto.offset.reset'='earliest';
+```
+
 ## ALTER STREAM
 Add new columns to a stream. This is not supported for streams defined using queries
 (`CREATE STREAM ... AS`).
@@ -33,7 +40,7 @@ ALTER STREAM stream_name
 ```
 
 ## ALTER TABLE
-Add new columns to a table. This is not supported for table defined using queries
+Add new columns to a table. This is not supported for tables defined using queries
 (`CREATE TABLE ... AS`)
 ```sql
 ALTER TABLE stream_name
@@ -60,6 +67,13 @@ Alias a column, expression, or type. For more information, see
 ```sql hl_lines="1"
 SELECT column_name AS column_alias
   FROM stream_name | table_name
+```
+
+## ASSERT
+Assert values, stream, table, or tombstones.
+
+```sql
+ASSERT NULL VALUES sourceName (columns)? KEY values            
 ```
 
 ## BETWEEN
@@ -120,6 +134,9 @@ FROM orders
 EMIT CHANGES;
 ```
 
+!!! Tip "See CASE in action"
+    - [Detect and analyze SSH attacks](https://confluentinc.github.io/ksqldb-recipes/cybersecurity/SSH-attack/#ksqldb-code)
+
 ## CAST
 Change the type of an expression to a different type.
 
@@ -148,6 +165,11 @@ information, see [CREATE CONNECTOR](../../ksqldb-reference/create-connector).
 CREATE SOURCE | SINK CONNECTOR connector_name
   WITH( property_name = expression [, ...]);
 ```
+
+!!! Tip "See CREATE CONNECTOR in action"
+    - [Materialized cache - Start the Debezium source connector](/tutorials/materialized/#start-the-debezium-connector)
+    - [Streaming ETL pipeline - Start the source connectors](/tutorials/etl#start-the-postgres-and-mongodb-debezium-source-connectors)
+    - [Streaming ETL pipeline- Start the Elasticsearch sink connector](/tutorials/etl/#start-the-elasticsearch-sink-connector)
 
 ## CREATE STREAM
 Register a stream on a {{ site.ak }} topic. For more information, see
@@ -214,7 +236,7 @@ CREATE TYPE <type_name> AS <type>;
 
 ## DEFINE
 
-Defines a variable.
+Defines a variable. For more information, see [DEFINE](define.md).
 
 ```sql
 DEFINE <name> = '<value>';
@@ -307,6 +329,17 @@ SELECT column_name(s)
    ON <stream_name1|table_name1>.column_name=<stream_name2|table_name2>.column_name
 ```
 
+## GRACE PERIOD
+Allow events to be accepted for a time period after a window ends. For more
+information, see [Out-of-order events](../../../concepts/time-and-windows-in-ksqldb-queries#out-of-order-events)
+
+```sql hl_lines="2"
+SELECT orderzip_code, TOPK(order_total, 5) FROM orders
+  WINDOW TUMBLING (SIZE 1 HOUR, GRACE PERIOD 2 HOURS) 
+  GROUP BY order_zipcode
+  EMIT CHANGES;
+```
+
 ## GROUP BY
 Group records in a window. Required by the WINDOW clause. Windowing queries
 must group by the keys that are selected in the query. For more information,
@@ -329,6 +362,22 @@ SELECT column_name, aggregate_function(column_name)
   GROUP BY column_name
   HAVING aggregate_function(column_name) operator value
 ```
+## HEADER
+
+Populate a column with the {{ site.ak }} record's last header that matches the key.
+
+```sql
+CREATE STREAM S (column_name BYTES HEADER('key'))
+WITH (kafka_topic='s', format='json');
+```
+
+## HEADERS
+Populate a column with the full list of the {{ site.ak }} record's headers.
+
+```sql
+CREATE STREAM S (column_name ARRAY<STRUCT<key STRING, value BYTES>> HEADERS)
+WITH (kafka_topic='s', format='json');
+```
 
 ## HOPPING
 Group input records into fixed-sized, possibly overlapping windows,
@@ -350,6 +399,23 @@ DROP STREAM [IF EXISTS] stream_name [DELETE TOPIC];
 DROP TABLE  [IF EXISTS] table_name  [DELETE TOPIC];
 ```
 
+## IN
+Specifies multiple `OR` conditions.
+
+```sql hl_lines="3"
+  SELECT select_expr [, ...]
+    FROM from_stream | from_table
+    WHERE exp IN (exp0, exp1, exp2);
+```
+
+The above is equivalent to:
+
+```sql hl_lines="3"
+  SELECT select_expr [, ...]
+    FROM from_stream | from_table
+    WHERE exp = exp0 OR exp = exp1 OR exp = exp2;
+```
+
 ## INNER JOIN
 Select records in a stream or table that have matching values in another stream
 or table. For more information, see
@@ -361,6 +427,12 @@ SELECT column_name(s)
    INNER JOIN stream_name2 | table_name2
    ON <stream_name1|table_name1>.column_name=<stream_name2|table_name2>.column_name
 ```
+
+!!! Tip "See INNER_JOIN in action"
+    - [Analyze datacenter power usage](https://confluentinc.github.io/ksqldb-recipes/real-time-analytics/datacenter/#ksqldb-code)
+    - [Build a dynamic pricing strategy](https://confluentinc.github.io/ksqldb-recipes/real-time-analytics/dynamic-pricing/#ksqldb-code)
+    - [Notify passengers of flight updates](https://confluentinc.github.io/ksqldb-recipes/customer-360/aviation/#ksqldb-code)
+    - [Streaming ETL pipeline](/tutorials/etl/#join-the-streams-together)
 
 ## INSERT INTO
 Stream the result of a SELECT query into an existing stream and its underlying
@@ -423,23 +495,6 @@ SELECT user_id
   EMIT CHANGES;
 ```
 
-## IN
-Specifies multiple `OR` conditions.
-
-```sql hl_lines"3"
-  SELECT select_expr [, ...]
-    FROM from_stream | from_table
-    WHERE exp IN (exp0, exp1, exp2);
-```
-
-The above is equivalent to:
-
-```sql hl_lines"3"
-  SELECT select_expr [, ...]
-    FROM from_stream | from_table
-    WHERE exp = exp0 OR exp = exp1 OR exp = exp2;
-```
-
 ## PARTITION BY
 Repartition a stream. For more information, see
 [Partition Data to Enable Joins](/developer-guide/joins/partition-data).
@@ -476,9 +531,10 @@ information, see [SELECT (Pull Query)](../../ksqldb-reference/select-pull-query)
 
 ```sql
 SELECT select_expr [, ...]
-  FROM aggregate_table
-  WHERE key_column=key
-  [AND window_bounds];
+  FROM from_item
+  [ WHERE where_condition ]
+  [ AND window_bounds ]
+  [ LIMIT count ];
 ```
 
 ## SELECT (Push Query)
@@ -509,6 +565,13 @@ SELECT WINDOWSTART, WINDOWEND, aggregate_function
   FROM from_stream
   WINDOW SESSION window_expression
   EMIT CHANGES;
+```
+
+## SET property
+Assign a property value.
+
+```sql
+SET 'auto.offset.reset'='earliest';
 ```
 
 ## SHOW CONNECTORS
@@ -629,6 +692,13 @@ Undefines a variable.
 UNDEFINE name;
 ```
 
+## UNSET property
+Unassign a property value.
+
+```sql
+UNSET 'auto.offset.reset';
+```
+
 ## WHERE
 Extract records that fulfill a specified condition. For more information, see
 [SELECT](../../ksqldb-reference/select-push-query/#example).  
@@ -652,7 +722,7 @@ SELECT WINDOWSTART, WINDOWEND, aggregate_function
 ```
 
 ## WINDOWSTART / WINDOWEND
-Specify the beginning and end bounds a window. For more information, see
+Specify the beginning and end bounds of a window. For more information, see
 [WINDOW](../../ksqldb-reference/select-push-query/#window).
 
 ```sql hl_lines="1"
@@ -661,6 +731,10 @@ SELECT WINDOWSTART, WINDOWEND, aggregate_function
   WINDOW window_expression
   EMIT CHANGES;
 ```
+
+!!! Tip "See WINDOWSTART in action"
+    - [Detect unusual credit card activity](https://confluentinc.github.io/ksqldb-recipes/anomaly-detection/credit-card-activity/#ksqldb-code)
+    - [Understand user behavior with clickstream data](https://confluentinc.github.io/ksqldb-recipes/customer-360/clickstream/#ksqldb-code)
 
 ## NULLIF
 Returns NULL if two expressions are equal, otherwise it returns the first expression.
